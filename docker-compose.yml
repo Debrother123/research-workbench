@@ -1,0 +1,5 @@
+services:
+  research-workbench:
+    build: .
+    ports:
+      - "8765:8765"

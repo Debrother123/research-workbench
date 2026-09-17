@@ -1,0 +1,47 @@
+/* Readable working surface; the graph can expand without leaving the project. */
+.canvas-focus .rail,.canvas-focus .inspector{display:none}
+.canvas-focus header,.canvas-focus #notice,.canvas-focus .bottom-actions{display:none}
+.canvas-focus main{display:flex;flex-direction:column;height:100vh;padding:10px 14px;box-sizing:border-box}
+.canvas-focus #workspace{flex:1;display:flex;flex-direction:column;min-height:0;border-radius:8px}
+.canvas-focus .work-body{flex:1;min-height:0;height:auto}
+.small,.check p,.file-item,textarea{font-size:13px}
+label,.tools button,.bottom-actions button,.inspector-tabs button{font-size:13px}
+.node .kind,.node small,.node .expand,.tag,.canvas-bottom,.canvas-caption{font-size:12px}
+.node{min-height:125px}
+.node strong{font-size:15px}
+.brand span,.local-badge,footer,.project-item small{font-size:12px}
+#inspector-body p{white-space:pre-wrap}
+#dialog-body>pre{white-space:pre-wrap}
+#dialog-body>pre:has(.code-line){white-space:pre}
+details{margin-top:14px}summary{cursor:pointer}
+.edge-label{display:none;paint-order:stroke;stroke:#f9faf6;stroke-width:4px;stroke-linejoin:round}
+.show-edge-labels .edge-label,.edge-group:hover .edge-label{display:block}
+@media(min-width:1101px){.work-body{min-height:500px;height:calc(100vh - 255px)}main{padding-top:20px}header{margin-bottom:16px}}
+
+/* Edge focus and routing refinements. */
+.edge{stroke-width:1.8;stroke-opacity:.68;transition:stroke .15s,stroke-opacity .15s,stroke-width .15s}
+.edge-data{stroke:#6f9185}
+.edge-supervision{stroke:#b9834a;stroke-dasharray:6 4}
+.edge-supply{stroke:#8b7ca8;stroke-dasharray:5 4}
+.edge-evaluation{stroke:#8591a5}
+.edge-group.muted .edge{stroke-opacity:.09;stroke-width:1.4}
+.edge-group.muted .edge-label{display:none}
+.edge-group.related .edge,.edge-group:hover .edge{stroke:#17675e;stroke-opacity:1;stroke-width:3}
+.edge-group.related .edge-label,.edge-group:hover .edge-label{display:block}
+.edge-group:hover .edge{filter:drop-shadow(0 1px 1px rgba(23,103,94,.18))}
+/* ELK route rendering keeps orthogonal connectors crisp and readable. */
+.edge{stroke-linecap:round;stroke-linejoin:round}
+.edge-group.related .edge{filter:drop-shadow(0 1px 2px rgba(23,103,94,.22))}
+/* Edge-role hierarchy: primary flow stands out; secondary relations recede until focused. */
+.edge-data{stroke-opacity:.78}
+.edge-supervision{stroke-opacity:.48}
+.edge-supply{stroke-opacity:.42}
+.edge-evaluation{stroke-opacity:.42}
+/* P5: edge legend dialog swatches (React Flow canvas era). */
+.edge-legend-row{display:flex;gap:12px;align-items:flex-start;margin:10px 0}
+.edge-legend-row p{margin:2px 0 0}
+.edge-legend-swatch{flex:none;width:56px;height:0;margin-top:9px;border-top:2px solid #888780}
+.edge-legend-verified{border-top-color:#5F5E5A;border-top-style:solid}
+.edge-legend-inferred{border-top-style:dashed;border-top-color:#888780}
+.edge-legend-hot{border-top-color:#B45309;border-top-width:2.5px}
+.edge-legend-other{border-top-color:#B4B2A9;border-top-style:dotted}

@@ -1,0 +1,20 @@
+{
+  "name": "research-workbench-frontend",
+  "version": "1.0.0",
+  "description": "React Flow canvas bundle for Research Workbench (DEC-006)",
+  "main": "index.js",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@xyflow/react": "12.11.6",
+    "elkjs": "0.12.0",
+    "esbuild": "0.28.2",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "private": true
+}

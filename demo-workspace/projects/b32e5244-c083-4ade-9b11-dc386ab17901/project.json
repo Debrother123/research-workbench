@@ -1,0 +1,1784 @@
+{
+  "id": "b32e5244-c083-4ade-9b11-dc386ab17901",
+  "name": "PerturbationBaselines2",
+  "mode": "paper",
+  "revision": 5,
+  "created_at": "2026-09-16T11:09:28.154388+00:00",
+  "updated_at": "2026-09-16T11:24:23.846073+00:00",
+  "note_path": "demo-workspace/notes/PerturbationBaselines-01-精读笔记-重构版.md",
+  "note_text": "---\ntitle: \"Deep-learning-based gene perturbation effect prediction does not yet outperform simple linear baselines\"\naliases: []\ntags:\n  - literature-note\n  - reading-note\n  - benchmark\n  - gene-perturbation\n  - foundation-model\ntype: literature-note\ncreated: 2026-09-16\nsource: \"https://doi.org/10.1038/s41592-025-02772-6\"\nauthor: \"Constantin Ahlmann-Eltze; Wolfgang Huber; Simon Anders\"\nyear: 2025\ntheme: \"比较深度扰动模型与简单基线在未见扰动上的额外泛化增益\"\nstudy_area: \"K562与RPE1癌细胞系中的单/双基因扰动\"\ndata_source: \"Norman、Replogle与Adamson公开单细胞扰动数据\"\nmethodology: \"按double/single两类benchmark复现模型并对照简单baseline\"\ncore_variable: \"未见扰动后的条件级基因表达变化与遗传交互\"\nkey_finding: \"复杂模型未稳定超过additive、mean或简单线性基线\"\nrelevance: \"提供按实验拆分benchmark、剥离representation贡献的范本\"\nitem_key: \"QKTPEMRD\"\nitem_key_type: \"attachment-only\"\n---\n\n# Deep-learning-based gene perturbation effect prediction does not yet outperform simple linear baselines\n\n> [!info] 版本说明\n> 这是完全重构版，原文件 `PerturbationBaselines-01-精读笔记.md` 保留不覆盖。本文按 experiment 纵向组织：先讲清每个 benchmark 的数据、split、模型、baseline、输出和指标，再讨论结论。\n\n> [!important] 证据标记\n> - **【论文】**：直接来自论文正文、Methods、Fig.1/2 caption 或 Extended Data caption。\n> - **【代码】**：由论文官方 GitHub commit `bfa6eeea2bd145a1af2ec0127a2e808cc38456a9` 的脚本核验；是第二证据层，不自动等同于论文陈述。\n> - **【推断】**：根据已核实事实做的教学解释，不冒充论文原文。\n> - **【冲突】**：论文不同位置、图注或官方代码之间存在不一致，本文并列记录，不替作者裁决。\n\n## 基本信息\n\n| 项目 | 内容 |\n| --- | --- |\n| 作者 | Constantin Ahlmann-Eltze、Wolfgang Huber、Simon Anders |\n| 年份 | 2025 |\n| 来源 | Nature Methods 22, 1657–1661, Brief Communication |\n| DOI | https://doi.org/10.1038/s41592-025-02772-6 |\n| PDF 依据 | Zotero 附件 `QKTPEMRD`；正文 p.1657–1661；Methods p.6–7；Extended Data Fig.1–10 |\n| 代码依据 | `github.com/const-ae/linear_perturbation_prediction-Paper`，commit `bfa6eeea2bd145a1af2ec0127a2e808cc38456a9` |\n| 数据例子 | [[20_学术研究/数据积累/数据例子-PerturbationBaselines|PerturbationBaselines 数据例子]] |\n| 路线拆解 | [[20_学术研究/文献库/导学/精读笔记/PerturbationBaselines-02-研究路线拆解|PerturbationBaselines 研究路线拆解]] |\n\n## 一句话摘要\n\n> 论文用两个彼此独立的 benchmark 检查：复杂基础模型和深度扰动模型，是否能在未见双扰动与未见单扰动上提供超过 additivity、训练均值或低维线性模型的额外泛化增益；结果显示没有稳定增益。\n\n## 📚 零基础概念导读\n\n| 顺序 | 概念 | 先记住的一句话 |\n| --- | --- | --- |\n| 1 | [[基因扰动效应预测]] | 输入扰动条件，预测扰动后一组基因的表达。 |\n| 2 | [[单细胞基因表达与伪bulk]] | 单细胞矩阵按扰动条件求均值后，才成为条件级表达向量。 |\n| 3 | [[细胞基础模型]] | 预训练表示、任务头和最终 decoder 必须分开审计。 |\n| 4 | [[线性模型与岭回归]] | 本文用 `Y≈GWPᵀ+b` 判断低维线性结构能否替代复杂模型。 |\n| 5 | [[遗传交互与加性基线]] | 双扰动偏离两个单扰动加性期望，才形成交互候选。 |\n| 6 | [[Warm Start、Cold Start与交叉验证]] | “未见扰动”与随机留出细胞不是同一种泛化。 |\n| 7 | [[预测模型评价指标]] | L2、Pearson delta、TPR–FDP 各自评价不同能力。 |\n\n## 1. 论文到底在问什么\n\n论文不是简单地问：\n\n> 神经网络和线性回归谁更强？\n\n它真正问的是：\n\n> **当前单细胞基础模型和深度扰动模型，是否在预测未执行过的 perturbation 时，比非常简单的规则或低维线性模型提供了额外泛化能力？**\n\n这里的“额外泛化增益”是指：\n\n- 模型不只是在训练时见过的 perturbation 上拟合得好；\n- 它能对训练中完全没有见过的 single perturbation，或没有作为组合出现过的 double perturbation，产生有用预测；\n- 而且这种预测能力在相同数据、相同 split、相同输出和相同 metrics 下，必须超过简单 baseline。\n\n【推断】因此，“模型更复杂”本身不是论文关心的变量；论文关心的是复杂度是否转化为 unseen perturbation 上的预测能力。\n\n## 2. 论文实验地图\n\n```mermaid\nflowchart TD\n    Q[核心问题：复杂模型是否带来额外泛化增益？]\n    Q --> B1[Benchmark 1：未见双扰动预测<br/>Fig.1]\n    Q --> B2[Benchmark 2：未见单扰动预测<br/>Fig.2]\n\n    B1 --> D1[Norman K562<br/>CRISPRa]\n    D1 --> E1[100 single + 124 double perturbations]\n    E1 --> S1[全部single训练<br/>62 double训练<br/>62 double测试<br/>重复5次]\n    S1 --> M1[deep/foundation models<br/>+ no change/additive]\n    M1 --> R1[Fig.1a/b 表达预测]\n    M1 --> R2[Fig.1c-f 遗传交互]\n\n    B2 --> D2[Replogle K562/RPE1<br/>Adamson K562]\n    D2 --> S2[GEARS simulation split<br/>未见target perturbation<br/>重复2次]\n    S2 --> M2[完整模型 vs mean/LM<br/>Fig.2a]\n    S2 --> M3[固定LM替换G/P<br/>Fig.2b/c]\n```\n\n关键区别：\n\n| 实验       | 测试什么“没见过”                      | 主要数据                       | 主要 baseline                             | 主要问题                        |\n| -------- | ------------------------------ | -------------------------- | --------------------------------------- | --------------------------- |\n| Fig.1    | 未见 double perturbation 组合      | Norman K562                | no change、additive                      | 组合外推与 genetic interaction   |\n| Fig.2a   | 未见 single perturbation target  | Adamson、Replogle K562/RPE1 | mean、training linear model              | 跨 perturbation 外推           |\n| Fig.2b/c | 固定线性 decoder，替换 representation | 同 Fig.2a                   | training PCA/random/external embeddings | 增益来自 representation 还是复杂结构？ |\n\n## 3. Benchmark 1：未见双扰动预测\n\n### 3.1 科学问题\n\n训练中已经见过：\n\n- 单扰动 A；\n- 单扰动 B；\n- 以及一部分其他双扰动。\n\n测试时要预测：\n\n> **A+B 这个组合在训练中从未作为 perturbation condition 出现时的表达结果。**\n\n【推断】这里检验的是“组合外推”：模型能否从单扰动效应和其他双扰动的训练经验，推断一个未见组合。\n\n### 3.2 数据\n\n【论文】数据来自 Norman et al. 的 K562 CRISPR activation 实验：\n\n| 项目          | 内容                         |\n| ----------- | -------------------------- |\n| 细胞系         | K562                       |\n| 扰动方式        | CRISPR activation（CRISPRa） |\n| 单基因扰动       | 100 个                      |\n| 双基因扰动       | 124 对                      |\n| 对照          | no-perturbation control    |\n| 表达维度        | 19,264 个基因的对数 RNA-seq 表达值  |\n| 主要 read-out | control 中表达量最高的 1,000 个基因  |\n\n一个 perturbation condition 最终对应：\n\n```text\n该条件下的多个单细胞\n→ 按基因求条件 pseudobulk 均值\n→ 一条 expression vector\n→ 作为 Y 中的一列\n```\n\n【论文】正文所称的 phenotypes 是 log RNA-seq expression values，不是原始 UMI counts。\n\n### 3.3 Train / test split\n\n```text\n100 个 single perturbations\n→ 全部进入训练\n\n124 个 double perturbations\n→ 随机分成：\n   ├── 62 个进入训练\n   └── 62 个留作测试\n\n整个“随机划分 + 训练 + 测试”流程\n→ 重复 5 次\n```\n\n【论文】测试单位是未见 double perturbation combination，不是随机留出的单个细胞。\n\n【论文】“no change”和“additive”两个 baseline 都不使用 double perturbation training data。\n\n### 3.4 哪些模型参与 Benchmark 1\n\n【论文】比较了五个 foundation models 和两个其他 deep learning models，再加上简单 baseline：\n\n| 模型           | 是否参与 double benchmark | 主要入口                                                                           |\n| ------------ | --------------------- | ------------------------------------------------------------------------------ |\n| scGPT        | 是                     | perturbation tutorial                                                          |\n| scFoundation | 是                     | GEARS v0.0.2 fork                                                              |\n| UCE          | 是                     | zero-shot，额外 ridge decoder                                                     |\n| scBERT       | 是                     | fine-tune perturbation labels，额外 ridge decoder                                 |\n| Geneformer   | 是                     | fine-tune perturbation labels，built-in in silico perturbation，额外 ridge decoder |\n| GEARS        | 是                     | GEARS API                                                                      |\n| CPA          | 是                     | Norman combinatorial tutorial                                                  |\n| no change    | 是                     | 直接预测 control                                                                   |\n| additive     | 是                     | 单扰动观测向量相加                                                                      |\n\n模型如何从输入变成 prediction，见第 8 节总表。\n\n### 3.5 Baseline 1：No change\n\n【论文】对每个 double perturbation：\n\n$$\n\\hat y_{A+B}=y_{\\varnothing}\n$$\n\n- 输入不是 perturbation 表达，而是 control condition；\n- 不需要训练；\n- 输出是 control 条件下的表达向量；\n- 它测试的是“完全预测没有变化”这一极端简单规则。\n\n### 3.6 Baseline 2：Additive\n\n【论文】对 double perturbation A+B：\n\n$$\n\\hat y_{A+B}=y_A+y_B-y_{\\varnothing}\n$$\n\n其中：\n\n- `y_A`：单扰动 A 的平均观测表达向量；\n- `y_B`：单扰动 B 的平均观测表达向量；\n- `y_∅`：无扰动 control 表达向量；\n- 公式等价于把 A、B 相对 control 的 LFC 相加。\n\n【论文】该模型不使用任何 double perturbation 训练数据。\n\n直观例子：\n\n```text\ncontrol expression: y_empty\nsingle A: y_A\nsingle B: y_B\n\nA 的变化量: y_A - y_empty\nB 的变化量: y_B - y_empty\n\n预测 A+B:\ny_empty + (y_A-y_empty) + (y_B-y_empty)\n= y_A + y_B - y_empty\n```\n\n【推断】additive 是 expression prediction 的有力 baseline，但它按定义不会产生非加性 interaction，因此不能用于“发现 interaction”。\n\n【论文】Methods 还把 additive 描述为线性模型式 (1) 的一个特例：\n\n- `G = Y_single`；\n- `P` 是对被扰动 gene 的 binary coding；\n- `W` 是 identity matrix；\n- `b = -y_∅`。\n\n这说明 additive 不是与线性模型无关的规则，而是同一条件级表达框架中的一个极端简单实例。\n\n### 3.7 一条测试样本怎样走完整流程\n\n【论文】Fig.1b 使用 `CEBPE + CEBPB` 作为测试 double perturbation 示例。\n\n```mermaid\nflowchart LR\n    T[Test condition: CEBPE + CEBPB]\n    T --> S1[scGPT → predicted expression vector]\n    T --> S2[scFoundation → predicted expression vector]\n    T --> S3[GEARS → predicted expression vector]\n    T --> S4[Geneformer/UCE/scBERT → embedding → ridge decoder]\n    T --> S5[CPA → predicted expression vector]\n    T --> A1[Additive: y_CEBPE + y_CEBPB - y_ctrl]\n    S1 --> C[compare with observed y_CEBPE+CEBPB]\n    S2 --> C\n    S3 --> C\n    S4 --> C\n    S5 --> C\n    A1 --> C\n```\n\n最终比较的不是模型名称，而是：\n\n【论文/源数据】Fig.1b 给出的 `CEBPE + CEBPB` 示例中，additive 约为 `L2=4.7`、Pearson delta `R2≈0.93`；源数据中对应记录为 `L2≈4.6608`、`R2_delta≈0.9271`，与图中四舍五入值一致。\n\n```text\n每个方法输出一个 predicted expression vector ŷ\n真实实验给出一个 observed expression vector y\n→ 在共同 read-out genes 上算误差\n```\n\n### 3.8 Fig.1a/b：表达预测\n\n【论文】Fig.1a：62 个 held-out double perturbations × 5 次 split 的 L2 error beeswarm。\n\n【论文】误差定义：\n\n$$\nL2(\\hat y,y)=\\sqrt{\\sum_g(\\hat y_g-y_g)^2}\n$$\n\n它也是 root mean squared error，针对 control 中表达量最高的 `n=1,000` 个基因。\n\n【论文】Pearson delta：\n\n$$\n\\mathrm{PearsonDelta}(\\hat y,y)=\\mathrm{cor}(\\hat y-y_{\\varnothing},y-y_{\\varnothing})\n$$\n\n- L2：同时惩罚方向和幅度误差；\n- Pearson delta：先减 control，再评价变化方向的一致性，不惩罚系统性幅度偏大或偏小；\n- Fig.1b：用 `CEBPE+CEBPB` 展示 observed vs predicted 的散点图。\n\n【论文】Extended Data Fig.2 还测试了不同 read-out gene 数量和 differential expression 排序；作者指出按真实 differential expression 排序在真实使用场景中不可用，因为需要 ground truth。\n\n### 3.9 Fig.1c–f：遗传交互\n\n这是同一个 double perturbation benchmark 的第二个问题。\n\n#### 什么算 genetic interaction\n\n【论文】先构造 additive expectation：\n\n```text\nobserved expression - additive expectation = interaction deviation\n```\n\n- 偏离接近 0：additive / non-interaction；\n- 偏离显著：genetic interaction candidate。\n\n【论文】作者对 124 个 double perturbations × 1,000 read-out genes 计算 observed minus additive expectation，并用 Efron empirical null（`locfdr` 1.1-8）识别交互。\n\n【论文】共识别 5,035 个 interactions，候选空间为 124×1,000=124,000，FDR=5%。\n\n#### 交互类别\n\n| 类别 | 定义 |\n| --- | --- |\n| buffering | 双扰动 LFC 位于 0 与 additive expectation 之间 |\n| synergistic | 双扰动效应超过 additive expectation |\n| opposite | 双扰动方向与单扰动相反 |\n| other | 两个单扰动方向相反等无法归入前类 |\n\n【论文】在 read-out gene values 中：buffering 2.3%，synergistic 0.6%，opposite 0%。\n\n#### 模型如何被评价为“发现交互”\n\n【论文】对每个方法的 prediction：\n\n1. 计算 predicted expression 相对 additive expectation 的偏离；\n2. 偏离越大，越像 interaction；\n3. 对阈值 `D` 的不同取值，计算 TPR 和 false discovery proportion；\n4. 得到 Fig.1c 曲线。\n\n【论文】additive baseline 不参加 interaction 排名，因为它的偏离按定义就是 0。\n\n【论文】Fig.1d/e 展示 interaction class 定义和观测组成；Fig.1f 展示 observed/predicted deviation from additive expectation。\n\n用文字表示其核心含义：\n\n```text\nFDP(l) = 前 l 个预测交互中实际非交互的比例\nTPR(l) = 前 l 个预测交互中找回的真实交互数 / 全部真实交互数\n```\n\n作者先按模型预测偏离 additive expectation 的大小排序，再在固定 FDP 下观察能找回多少真实 interaction。【论文】作者选择 FDP–TPR 而不是只画 precision-recall，是因为它直接回答“在固定 false-positive fraction 下找回多少 interactions”。\n\n### 3.10 Benchmark 1 结果\n\n【论文】表达预测：\n\n- 所有模型 prediction error 都明显高于 additive baseline；\n- Extended Data Fig.2 的其他 metrics 得到相同总体结果。\n\n【论文】interaction prediction：\n\n- 没有模型优于 no-change baseline；\n- 模型很少预测 synergistic interactions；\n- 多数模型偏向 buffering；\n- 即使模型预测 synergistic，正确率也很低；\n- scGPT、UCE、scBERT 的预测在很多基因上不随 perturbation 改变；\n- GEARS 和 scFoundation 的变化幅度也明显小于 ground truth。\n\n【论文】Extended Data Fig.5/6：HBG2 和 HBZ 在多个模型的前列预测中反复出现；某些模型对这两个强单扰动基因的组合预测接近 no-change。\n\n【论文】Extended Data Fig.4：作者还报告了 precision-recall 和 ROC curve，并给出五个 split 的 AUC；模型排序与 Fig.1c 一致。\n\n### 3.11 Benchmark 1 结论\n\n正确表述是：\n\n> 在 Norman K562 double perturbation benchmark、当前模型实现和当前评价条件下，复杂模型没有稳定超过 additive expression baseline；interaction detection 也没有稳定超过 no-change baseline。\n\n不能写成：\n\n> 所有深度模型在生物任务中一般都没有用。\n\n## 4. Benchmark 2：未见单扰动预测\n\n### 4.1 科学问题\n\nBenchmark 1 预测的是未见组合 `A+B`；Benchmark 2 预测的是：\n\n> **训练集中根本没有某个 perturbation target X 的条件，现在要预测扰动 X 后的表达。**\n\n【推断】这检验的是跨 perturbation target 的泛化，而不是同一 perturbation 下随机留出细胞。\n\n### 4.2 数据\n\n【论文】使用三套 CRISPR interference 数据：\n\n| 数据集 | 细胞系 | 来源版本 | 论文中的主要用途 |\n| --- | --- | --- | --- |\n| Replogle K562 essential | K562 | GEARS 提供 | unseen single perturbation |\n| Replogle RPE1 essential | RPE1 | GEARS 提供 | unseen single perturbation |\n| Adamson | K562 | GEARS 提供 | unseen single perturbation |\n\n【论文】Methods 明确指出：single gene perturbation benchmarks 使用 Adamson 与 Replogle 数据，并以 GEARS 提供的版本为准。\n\n### 4.3 GEARS simulation split\n\n【论文】作者使用 GEARS 的 `simulation` test-training splitting procedure，并重复两次。\n\n【论文】没有在本文 Methods 中展开 simulation split 的内部算法。因此本笔记只写确定的边界：\n\n- split 按 perturbation 组织；\n- test perturbation target 对训练不可见；\n- 不是简单地随机留出细胞；\n- 重复两次以降低单次 split 的偶然性。\n\n【未解决】如果需要知道 simulation split 具体如何按 gene/pathway 分组，需要继续查 GEARS 的对应实现；本文没有给出更细规则，不能自行补写。\n\n### 4.4 Baseline 1：Mean\n\n【论文】mean baseline：\n\n> 对每个 read-out gene，预测训练集中所有 perturbation conditions 下的平均表达。\n\n【代码】`run_mean_prediction.R` 逻辑：\n\n```text\n读取 perturb_processed.h5ad\n→ 按 condition pseudobulk\n→ 取 training conditions\n→ 对每个 gene 计算 training 条件均值\n→ 对每个测试 perturbation 重复输出同一个向量\n```\n\n它不使用测试 perturbation 的标签，也不使用任何 test-specific input。\n\n### 4.5 Baseline 2：Training linear model\n\n这是论文最重要的简单 baseline。不要直接从公式开始，先看数据。\n\n#### 4.5.1 Y_train 是什么\n\n【论文】令 `Y_train` 为：\n\n```text\n行 = read-out genes\n列 = perturbation conditions\n一个元素 = 某 gene 在某 condition 下的 pseudobulk 表达\n```\n\n示意：\n\n```text\n             perturb A   perturb B   perturb C\ngene 1          ...         ...         ...\ngene 2          ...         ...         ...\ngene 3          ...         ...         ...\n...\n```\n\n#### 4.5.2 先求 b\n\n【论文】`b` 是 `Y_train` 的 row means，也就是每个 read-out gene 在训练 conditions 上的平均表达。\n\n#### 4.5.3 对 Y_train 做 PCA，得到 G\n\n【论文】对 `Y_train` 做 PCA，取前 `K` 个 principal components 作为：\n\n$$\nG \\in \\mathbb{R}^{|\\text{read-out genes}|\\times K}\n$$\n\n- 每一行：一个 read-out gene 的低维 representation；\n- 每一列：一个 latent component；\n- Methods 说明 `K=10`。\n\n【推断】PCA 在这里不是预测器，而是在为每个 gene 构造可比较的低维坐标。\n\n#### 4.5.4 从 G 中取被扰动 gene，形成 P_train\n\n【论文】训练集中被扰动的 gene 本身也是 read-out gene，因此它已经在 `G` 中有一行。\n\n```text\nG:\n  gene A  ← 训练 target\n  gene B  ← 训练 target\n  gene C\n  gene D  ← 训练 target\n  ...\n\n取 training perturbed genes 对应的行\n↓\nP_train\n```\n\n因此：\n\n- `P_train` 的行对应训练 condition 的 target gene；\n- 它不是一个额外训练出来的自由参数，而是从 gene embedding `G` 中取出的子矩阵。\n\n需要特别注意：\n\n> 这里使用的是 **被扰动 gene 本身的 representation**，而不是任意一个“perturbation ID embedding”。这为后续预测未见 target X 留下了入口。\n\n#### 4.5.5 拟合 W\n\n【论文】线性模型为：\n\n$$\nY_{train}\\approx GWP_{train}^T+b\n$$\n\n其中：\n\n- `G`：read-out gene × K；\n- `P_train`：training perturbations × L；\n- `W`：K × L；\n- `b`：每个 read-out gene 的 baseline。\n\n【论文】作者用 ridge normal equations 求解：\n\n$$\nW=(G^{T}G+\\lambda I)^{-1}G^{T}(Y_{train}-b)P_{train}(P_{train}^{T}P_{train}+\\lambda I)^{-1}\n$$\n\n- `λ=0.1`；\n- 用于数值稳定性；\n- 代码中 `run_linear_pretrained_model.R` 的 ridge fit 与此一致。\n\n【推断】可以把 `W` 理解为：把 perturbation representation 所在的 latent space 映射到 read-out gene response latent space。\n\n#### 4.5.6 未见 perturbation X 怎么预测\n\n测试 target X 没有作为 perturbation condition 出现在训练集中，但 X 仍然可能是 read-out gene，因此它在 `G` 中有：\n\n$$\ng_X\n$$\n\n作者取测试 perturbation target 在 `G` 中的对应行作为：\n\n$$\np_X=g_X\n$$\n\n再代入：\n\n$$\n\\hat y_X=GWp_X+b\n$$\n\n【推断】这就是线性模型能预测 unseen single perturbation 的关键：模型不是查 X 的 perturbation label，而是把 X 的 gene representation 当作 perturbation representation。\n\n### 4.6 NumPy / R 矩阵方向提醒\n\n【论文】用矩阵记号时：\n\n```text\nG: genes × K\nP: perturbations × L\nW: K × L\nY: genes × perturbations\n```\n\n【代码】官方 R 代码内部会转置 embedding，并匹配 gene names，所以读代码时可能看到：\n\n```text\npert_emb: components × genes\n```\n\n但语义不变：测试 perturbation 的 representation 来自其 target gene 在 G 中的行。\n\n## 5. Fig.2a：完整模型和 baseline 的比较\n\n### 5.1 完整模型\n\n【论文】参与 Fig.2a 的 deep/foundation models：\n\n- scGPT\n- UCE\n- scBERT\n- Geneformer\n- GEARS\n\n### 5.2 两个缺席模型\n\n【论文】scFoundation 没有参加 single perturbation Fig.2a，因为：\n\n> 它要求每个数据集精确匹配其 pretraining data 中的 genes；Adamson 和 Replogle 中大多数所需 genes 缺失。\n\n【论文】CPA 没有参加 single perturbation Fig.2a，因为：\n\n> CPA 不是为预测 unseen perturbations 设计的。\n\n【推断】这不是随意漏掉，而是模型接口和任务假设不匹配；论文因此在 double benchmark 中包含 CPA，但在 unseen single benchmark 中不包含。\n\n### 5.3 Baseline\n\n【论文】Fig.2a 主要比较：\n\n- mean baseline；\n- linear model based on training；\n- 完整 deep/foundation models。\n\n### 5.4 公平比较集合\n\n【论文】并不是所有模型都能为所有 unseen perturbations 输出 prediction。例如 training linear model 只能预测 target gene 也在 read-out genes 中的 perturbation。\n\n【论文】作者因此限制到：\n\n> **所有模型都能提供 prediction 的共同 perturbation subset。**\n\nMethods 写的是：\n\n- Adamson：73 perturbations；\n- Replogle K562：398；\n- Replogle RPE1：629。\n\n【冲突】Fig.2 caption 写的是 134、210、24 个 unseen single perturbations；Methods 的数字不同，官方 source-data 的逐 split 数量又不同。本笔记不裁决，详见第 11 节 discrepancy ledger。\n\n### 5.5 Fig.2a 结果\n\n【论文】没有 deep learning model 能持续超过：\n\n- mean prediction；\n- training linear model。\n\n【论文】这意味着在当前 single perturbation benchmark 下，复杂模型至少没有稳定提供超过简单规则或低维线性模型的额外泛化增益。\n\n### 5.6 Extended Data Fig.8\n\n【论文】Extended Data Fig.8 使用：\n\n- Pearson delta；\n- 不同数量的 read-out genes；\n- control expression ranking；\n- differential expression ranking。\n\n结果与主图一致：单扰动任务中复杂模型没有显示稳定优势。\n\n### 5.7 Extended Data Fig.9–10\n\n- 【论文】Extended Data Fig.9：transfer prediction accuracy 与 K562/RPE1 之间的 gene expression similarity 有关。主文总结为：两个细胞系中越相似的 gene，transfer prediction 越准确。\n- 【论文】Extended Data Fig.10：记录 fine-tune 和 double perturbation prediction 的 elapsed time 与 peak memory；计算资源消耗明显，但正文没有把资源消耗直接当作精度证据。\n\n## 6. Fig.2b/c：固定线性模型，替换 G 或 P\n\n### 6.1 这不是另一个完整模型 benchmark\n\nFig.2c 不看新的网络 architecture，而是固定：\n\n$$\nY\\approx GWP^T+b\n$$\n\n只替换：\n\n- gene representation `G`；\n- perturbation representation `P`；\n- 然后重新拟合 `W` 并评价预测。\n\n【推断】它问的是：\n\n> 深度模型的优势来自复杂 decoder/architecture，还是来自 pretrained representation 本身？\n\n### 6.2 G 的来源\n\n【论文/代码】测试过：\n\n| G 来源 | 证据 |\n| --- | --- |\n| training PCA | Methods；代码 `gene_embedding=training_data` |\n| random | 代码 `gene_embedding=random` |\n| scGPT gene embedding | Methods；按 scGPT gene regulatory tutorial 提取 |\n| scFoundation gene embedding | Methods；从 `pos_emb.weight` 提取 |\n\n### 6.3 P 的来源\n\n| P 来源 | 证据 |\n| --- | --- |\n| training-derived | 默认线性模型 |\n| random | 代码 `pert_embedding=random` |\n| GEARS Gene Ontology embedding | Methods；pathway membership matrix 的 spectral embedding |\n| Replogle perturbation-data embedding | Methods；对 reference perturbation means 做 10-dimensional PCA |\n\n【论文】Replogle transfer 规则：\n\n- 用 K562 作为 Adamson 和 RPE1 的 pretraining source；\n- 用 RPE1 作为 K562 的 pretraining source。\n\n### 6.4 组合实验表\n\n| 实验 | G 来源 | P 来源 | W 是否重新拟合 | 主要想检验 |\n| --- | --- | --- | --- | --- |\n| LM training | training PCA | training-derived | 是 | 低维线性结构本身 |\n| LM random-G | random | training/pretrained | 是 | G 是否必须包含训练信息 |\n| LM random-P | training PCA/random | random | 是 | P 是否提供真实 perturbation 关系 |\n| LM scGPT-G | scGPT | training/external | 是 | atlas gene representation 的增量 |\n| LM scFoundation-G | scFoundation | training/external | 是 | atlas gene representation 的增量 |\n| LM GEARS-P | training/scGPT-G | GEARS GO | 是 | GO perturbation prior 的增量 |\n| LM Replogle-P | training/scGPT-G | Replogle PCA | 是 | perturbation-data pretraining 的增量 |\n\n### 6.5 Fig.2c 结果\n\n【论文】使用外部 embedding 的 linear model：\n\n- 与 scGPT/GEARS 的自带 decoder 相比，表现相同或更好；\n- scPrompt/scFoundation 的 gene embeddings 超过 mean baseline；\n- 但没有持续超过使用 training data G/P 的 linear model；\n- 使用 Replogle perturbation data pretrained 的 P 的 linear model，一致超过所有其他模型。\n\n【论文】总体解释：\n\n> single-cell atlas pretraining 相对 random embeddings 只提供小幅收益；\n> perturbation-data pretraining 提供了更明显的预测增益。\n\n### 6.6 这一节能说明什么\n\n【推断】它可以部分拆分：\n\n- representation 的贡献（替换 G/P）；\n- decoder/architecture 的贡献（固定 W 线性解码）。\n\n但它仍不能证明“某个 pretrained representation 在所有 unseen perturbation 任务中普遍更好”；结论受 current data、split、gene matching 和 evaluation protocol 限制。\n\n## 7. 每个模型到底经过了什么\n\n> 本表尽量按【论文】和【代码】填写；两者没有说明的细节明确标出，不用通用领域知识补全。\n\n| 模型 | pretraining | 当前 benchmark 是否微调 | perturbation 如何施加 | 中间 representation | expression prediction 怎样产生 |\n| --- | --- | --- | --- | --- | --- |\n| scGPT | 单细胞 foundation model | 【论文】使用官方 perturbation tutorial 的代码和参数；具体 loss/训练细节本文未展开 | 【论文】通过官方 tutorial 的 perturbation workflow | 模型内部 cell/gene representation | 直接输出 predicted expression |\n| scFoundation | 单细胞 foundation model | 【论文】fine-tune；【代码】GEARS v0.0.2 fork，`finetune_method=\"frozen\"`，3 天限制，5 epochs；该 upstream 设置的精确含义本文未说明 | 【论文】官方 GEARS-style API 接收 perturbation | 预训练模型与 GEARS 融合的 representation | API 直接输出 expression change prediction |\n| GEARS | 无 single-cell foundation pretraining；使用 GO prior | 【论文】在当前数据上训练并用 GEARS API fine-tune | GO pathway membership + perturbation 条件 | 模型内部 perturbation/gene representation | `gears_model.predict()` 输出 predicted expression |\n| CPA | 无 foundation pretraining；组合扰动模型 | 【论文】按 Norman combinatorial CRISPR tutorial 训练/test；不是 fine-tune foundation model | perturbation condition 以 CPA 的 condition/perturbation 接口进入 | CPA latent representation | 从 CPA decoder 得到 perturbation expression prediction |\n| Geneformer | 单细胞 foundation model | 【论文】fine-tune：预测训练数据的 perturbation labels；【代码】fine-tune 后使用 built-in in silico perturbation | built-in in silico perturbation：delete 或 overexpress target gene | perturbed cell embedding（CLS） | 额外 ridge regression linear decoder 从 embedding 预测 expression |\n| UCE | 单细胞 foundation model；zero-shot 设计 | 【论文】不 fine-tune；报告 4-layer 版本 | 【论文】没有 in silico perturbation API；用 unperturbed expression matrix，并覆盖 perturbed genes 的 rows with ground-truth expression | UCE cell embedding | 额外 ridge regression linear decoder |\n| scBERT | 单细胞 foundation model | 【论文】fine-tune：预测训练 perturbation labels；【代码】fine-tune 后做 in silico 风格 embedding | 与 UCE 相同：覆盖 perturbed gene rows；代码明确存在 test leakage 风险 | scBERT attention-sum embedding | 额外 ridge regression linear decoder |\n| Linear model | 无，除非显式替换为外部 G/P | 不 fine-tune deep network；只拟合 ridge W | test target gene X 的 gene embedding `g_X` 作为 `p_X` | G、P、W | `ŷ_X=GWp_X+b` |\n| Additive | 无 | 无 | 单扰动 A、B 的 observed mean vectors | `y_A,y_B,y_∅` | `ŷ_A+B=y_A+y_B-y_∅` |\n| Mean | 无 | 无 | 不依赖 perturbation-specific input | training conditions 的 row means | 每个测试 perturbation 都输出同一平均表达向量 |\n\n### 模型版本与设置\n\n【论文】Methods 报告的版本：\n\n| 模型 | 版本/来源 |\n| --- | --- |\n| GEARS | 0.1.2 |\n| scGPT | 0.2.1 |\n| scFoundation | 基于 GEARS 0.0.2 fork |\n| CPA | 0.8.8 |\n| Geneformer | 0.1.0 |\n| scBERT | commit `262fd4b9`，模型权重由作者提供 |\n| UCE | commit `8227a65c`，报告 4-layer 版本 |\n\n【论文】作者尽量使用各模型默认参数；scFoundation 的 fine-tuning 限时 3 天，实际训练 5 个 epochs；作者报告 4-layer 与 33-layer UCE 没有性能差异。\n\n### 证据边界\n\n- **论文明确写明**：GEARS/scFoundation API、scGPT tutorial、CPA tutorial、Geneformer in silico perturbation、UCE 零样本与覆盖 ground truth、scBERT 同样覆盖 ground truth、三种模型需要额外 ridge decoder。\n- **官方代码核验**：具体 embedding 提取、UCE/scBERT 的覆盖操作、linear model 的 G/P 替换选项、scFoundation 的 `finetune_method=\"frozen\"`。\n- **本文没有报告**：多数模型 optimizer、batch size、learning rate、完整 epoch schedule，以及所有 upstream architecture 的内部细节。不要用一般模型论文知识补写到“本文明确说明”里。\n- 【冲突/待核】scFoundation 在论文文字中称为 fine-tune，但代码参数是 `finetune_method=\"frozen\"`；需要查 upstream scFoundation/GEARS 代码才能解释该参数具体冻结了什么。\n\n## 8. 论文完整论证链\n\n```mermaid\nflowchart TD\n    C1[Claim 1：复杂模型应能预测未见 double perturbations]\n    C1 --> E1[Norman K562 double benchmark]\n    E1 --> R1[Fig.1a/b expression prediction error > additive]\n    E1 --> R2[Fig.1c-f interaction detection no better than no-change]\n    R1 --> K1[双扰动表达与交互预测都没有稳定超过简单baseline]\n\n    C2[Claim 2：复杂模型应能预测未见 single perturbations]\n    C2 --> E2[Adamson + Replogle K562/RPE1]\n    E2 --> R3[Fig.2a complete models vs mean/training LM]\n    R3 --> K2[完整模型没有稳定超过mean或training LM]\n\n    C3[Claim 3：pretrained representation 应提供迁移能力]\n    C3 --> E3[Fig.2b/c 固定linear model，替换G/P]\n    E3 --> R4[atlas gene embeddings：相对random只有小幅增益]\n    E3 --> R5[perturbation-data-pretrained P：更稳定增益]\n    R4 --> K3[复杂结构未必是增益来源]\n    R5 --> K3\n\n    K1 --> Q[总体结论：当前复杂模型未证明在未见扰动上<br/>提供超过简单baseline的额外泛化增益]\n    K2 --> Q\n    K3 --> Q\n```\n\n## 9. 公式索引\n\n> 公式索引只用于快速定位；公式的完整解释都在对应实验流程中。\n\n| 公式/指标 | 所在实验 | 作用 |\n| --- | --- | --- |\n| `ŷ_A+B=y_A+y_B-y_∅` | Benchmark 1 additive | 表达预测 baseline |\n| `L2(ŷ,y)` | Benchmark 1/2 | 绝对误差 |\n| `PearsonDelta(ŷ,y)` | Benchmark 1/2 | 去 control 后的方向相关 |\n| FDP / TPR | Benchmark 1 interaction | 交互候选发现 |\n| `Y≈GWPᵀ+b` | Benchmark 2 linear model | 低维条件级表达模型 |\n| ridge normal equations | Benchmark 2 linear model | 拟合 W |\n| `p_X=g_X` | Benchmark 2 unseen prediction | 测试 target 的 perturbation representation |\n\n## 10. 数据冲突、泄漏与公平性\n\n### 10.1 数量冲突账本\n\n| 主题 | 来源 A | 来源 B | 来源 C | 处理方式 |\n| --- | --- | --- | --- | --- |\n| Norman genes | 正文：19,264 | Extended Data Fig.10：19,624 | 下载的原始 H5AD：19,264 | 标为 discrepancy；正文与 H5AD 一致，但与 ED10 不同 |\n| Norman cells | 正文未给 | ED10：81,143 | 原始 H5AD：84,986 | 标为 discrepancy；不能自行统一 |\n| Norman conditions | 正文：100 single +124 double +control=225 | ED10：225 conditions | 原始 H5AD：227 categories = ctrl +101 single +125 double | 标为 discrepancy；后续分析可能继续过滤 |\n| Adamson cells | ED1 table：65,899 | 下载的 `perturb_processed.h5ad`：68,603 | - | 版本/过滤差异未解释 |\n| Adamson perturbations | ED1 table：81 | 下载 processed H5AD：86 non-control | - | 版本/过滤差异未解释 |\n| Replogle K562 cells | ED1 table：162,264 | processed H5AD：162,751 | - | 版本/过滤差异未解释 |\n| Replogle K562 perturbations | ED1 table：1,087 | processed H5AD：1,092 non-control | - | 版本/过滤差异未解释 |\n| Replogle RPE1 cells | ED1 table：161,423 | processed H5AD：162,733 | - | 版本/过滤差异未解释 |\n| Replogle RPE1 perturbations | ED1 table：1,534 | processed H5AD：1,543 non-control | - | 版本/过滤差异未解释 |\n| Single test counts | Fig.2 caption：134 /210 /24 across two splits | Methods common subset：73/398/629 | source data per split：约 18/104/163; across two splits 36/208/326 | 标为 unresolved；不同定义和版本未对齐 |\n\n> 说明：ED1 table 的数字来自官方 `dataset_overview.Rmd` 中用于生成 Extended Data Fig.1a 的 LaTeX 表；processed H5AD 数字来自我们下载并解析的官方数据包。两者不一致时，不应把其中一个当作唯一正确值。\n\n### 10.2 Potential leakage\n\n【论文】UCE：\n\n- 没有 in silico perturbation API；\n- 直接取 unperturbed cells 的表达矩阵；\n- 把被扰动 gene 的 rows 替换成 ground-truth expression matrix 的值；\n- 作者明确承认 test data leakage 理论上可能给模型带来优势。\n\n【论文】scBERT：\n\n- 使用与 UCE 相同的 embedding 构造思路；\n- 因此同样存在 theoretical test leakage warning。\n\n【推断】这不会自动解释所有结果，但它意味着 UCE/scBERT 的结果不能当作完全独立的零泄漏泛化证据。\n\n### 10.3 公平性限制\n\n【论文】主要限制：\n\n- 只使用四个数据集；\n- 全部来自癌症细胞系；\n- 没有重新做 QC；\n- 可能保留没有改变自身 target gene 的 perturbation；\n- 不同模型的基因匹配和输入接口不同；\n- scFoundation 在 single benchmark 中因基因不匹配缺席；\n- CPA 的代码修复版本性能更差，作者最终报告 original code 的结果。\n\n【推断】因此，论文的强结论是“在当前 benchmark 和实现下没有稳定超过简单 baseline”，不是“架构 X 在所有 perturbation 任务中一定无效”。\n\n## 11. 研究结论\n\n1. **Double perturbation**：在当前 Norman K562 benchmark 中，复杂模型没有稳定超过 additive expression baseline；interaction detection 也没有稳定超过 no-change baseline。\n2. **Single unseen perturbation**：完整深度模型没有稳定超过 mean 或 training linear model。\n3. **Representation analysis**：单细胞 atlas 预训练 gene embeddings 相对 random embeddings 只提供小幅收益；perturbation-data-pretrained P 提供了更明显的增益。\n4. **总体结论**：论文质疑的是“复杂模型天然带来额外泛化能力”这一假设，而不是笼统否定深度学习方法。\n\n## 12. 未解决问题\n\n| 问题 | 当前已知 | 下一步 |\n| --- | --- | --- |\n| Fig.2 test perturbation 数量冲突 | Fig.2 caption、Methods、source data 三套数字 | 对照论文版本与官方仓库历史，确认每个数字的定义 |\n| Norman 数据规模冲突 | 正文、ED10、H5AD 三套数字 | 检查 scFoundation/GEARS 每一步过滤和 QC 代码 |\n| GEARS simulation split 内部规则 | 论文只说使用该 procedure | 查 GEARS 实现的 split 定义，但不要把它写成论文结论 |\n| scFoundation `finetune_method=\"frozen\"` | 论文称 fine-tune，代码参数显示 frozen | 查 upstream scFoundation/GEARS 代码，确认冻结范围 |\n| 模型超参数和 optimizer | 论文绝大多数未报告 | 不补写；如需复现，查官方代码或原模型论文 |\n| Zotero 父条目元数据 | 当前使用 attachment key `QKTPEMRD` | 重启/重开 Zotero 后补父条目 key |\n\n## 13. 理解自测\n\n1. 本文有几套 benchmark？分别测试什么“未见”对象？\n2. Benchmark 1 的 100 个 single 和 124 个 double 怎样划分？测试单位是什么？\n3. Additive 为什么强？为什么不能用于 interaction detection？\n4. Fig.1a/b 与 Fig.1c-f 分别评价什么？\n5. Benchmark 2 中 test perturbation X 为什么能被 linear model 预测？`g_X` 从哪里来？\n6. `G`、`P_train`、`W`、`b` 的形状和来源分别是什么？\n7. 哪个模型使用额外 ridge decoder？为什么？\n8. UCE 和 scBERT 的 leakage 具体来自哪里？\n9. Fig.2a 与 Fig.2c 的本质区别是什么？\n10. 哪些模型没有参加 single perturbation benchmark？原因是什么？\n11. 论文的哪些数量在不同位置不一致？\n12. 为什么“复杂模型没有超过简单 baseline”不能改写成“深度模型普遍无效”？\n\n<details>\n<summary>参考答案与定位</summary>\n\n1. 三套分析：Fig.1 double perturbation；Fig.2a unseen single perturbation；Fig.2b/c representation analysis。\n2. 100 个 single 全部训练；124 个 double 随机分成 62 train/62 test；整个流程重复 5 次；测试单位是未见 double combination。\n3. Additive 使用单扰动 observed means，不用 double training data；但按定义输出就是 additive expectation，不可能产生非加性 interaction。\n4. Fig.1a/b 评价 expression prediction；Fig.1c–f 评价 interaction detection。\n5. 测试 target X 虽然未作为 condition 训练，但它可能在 read-out gene 中，因此有 `g_X`；令 `p_X=g_X`，代入 `GWp_X+b`。\n6. `G`：genes×K，来自训练数据 PCA；`P_train`：training targets×L，来自 G 的对应行；`W`：K×L，ridge fit；`b`：gene row means。\n7. Geneformer、UCE、scBERT；它们的输出是 perturbed embedding，需要 ridge linear decoder 映射到 expression。\n8. 用 unperturbed expression matrix，并把被扰动 gene rows 替换成 ground-truth expression。\n9. Fig.2a 比较完整模型的端到端性能；Fig.2c 固定 linear decoder，只替换 G/P，分析 representation 的贡献。\n10. scFoundation 因 gene matching 缺席；CPA 因不是为 unseen perturbations 设计而缺席。\n11. Fig.2 caption vs Methods vs source data；Norman 正文/ED10/H5AD；ED1 table vs processed H5AD counts。\n12. 结论受数据、split、模型实现、输入权限和评价协议限制，只能说明当前 benchmark 下没有稳定增益。\n\n</details>\n\n## 14. 相关文档\n\n- 数据例子：[[20_学术研究/数据积累/数据例子-PerturbationBaselines|PerturbationBaselines 数据例子]]\n- 研究路线拆解：[[20_学术研究/文献库/导学/精读笔记/PerturbationBaselines-02-研究路线拆解|PerturbationBaselines 研究路线拆解]]\n- 原精读笔记（保留不覆盖）：[[20_学术研究/文献库/导学/精读笔记/PerturbationBaselines-01-精读笔记|PerturbationBaselines 原精读笔记]]\n- 官方代码：https://github.com/const-ae/linear_perturbation_prediction-Paper/tree/bfa6eeea2bd145a1af2ec0127a2e808cc38456a9\n\n\n",
+  "source_path": "https://github.com/const-ae/linear_perturbation_prediction-Paper/tree/bfa6eeea2bd145a1af2ec0127a2e808cc38456a9",
+  "brief": "",
+  "nodes": [
+    {
+      "id": "question-map",
+      "name": "问题与实验地图",
+      "kind": "module-group",
+      "category": "data",
+      "parent": null,
+      "x": 0,
+      "y": 0,
+      "description": "作用：回答论文真正比较什么，并建立两套 benchmark 的总地图。\n代码实际：README 说明 double/single benchmark 的数据、运行入口和统一调度方式。\n笔记边界：核心问题是复杂模型是否带来额外泛化增益，而不是泛泛比较深度模型与线性回归。",
+      "code": {
+        "file": "source/benchmark/README.md",
+        "start": 1,
+        "end": 152,
+        "sha256": "82fe232c61a42b748fa541997f380da9506be96d7b7fd3a9ba58aeac21452e8e"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": "结构整理：按重构版精读笔记与脚本职责分组；仅静态审阅，未执行作者代码。"
+    },
+    {
+      "id": "benchmark-double",
+      "name": "Benchmark 1 · 未见双扰动",
+      "kind": "module-group",
+      "category": "fusion",
+      "parent": null,
+      "x": 0,
+      "y": 0,
+      "description": "作用：检验模型能否预测训练中未出现的 double perturbation 组合。\n代码实际：Norman K562 数据、随机 62/62 double split，以及 no-change/additive 对照。\n笔记边界：分别评价 expression prediction 与 genetic interaction，测试单位是未见组合。",
+      "code": {
+        "file": "source/benchmark/src/run_additive_model.py",
+        "start": 1,
+        "end": 101,
+        "sha256": "413990d273f4f8fe1d0ef24308638feb62d48ef51367b5d1a3a2a3423ace6154"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": "结构整理：按重构版精读笔记与脚本职责分组；仅静态审阅，未执行作者代码。"
+    },
+    {
+      "id": "benchmark-single",
+      "name": "Benchmark 2 · 未见单扰动",
+      "kind": "module-group",
+      "category": "head",
+      "parent": null,
+      "x": 0,
+      "y": 0,
+      "description": "作用：检验模型能否预测训练中未出现的 single perturbation target。\n代码实际：Adamson、Replogle K562/RPE1，使用 GEARS simulation split 并重复两次。\n笔记边界：核心对照是 mean 与 training linear model，不是随机留出同一 perturbation 的细胞。",
+      "code": {
+        "file": "source/benchmark/src/run_linear_pretrained_model.R",
+        "start": 1,
+        "end": 187,
+        "sha256": "49bda2a46b92c2b0b5bf263b957a3890dbdeff2d4837a94e6b0a397e0e38a6f8"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": "结构整理：按重构版精读笔记与脚本职责分组；仅静态审阅，未执行作者代码。"
+    },
+    {
+      "id": "fig2a-comparison",
+      "name": "完整模型 vs 简单基线（Fig.2a）",
+      "kind": "module-group",
+      "category": "evaluation",
+      "parent": null,
+      "x": 0,
+      "y": 0,
+      "description": "作用：在统一数据、split、输出和指标下比较完整模型与 simple baselines。\n代码实际：结果收集与评价脚本统一读取各模型 prediction 和 ground truth。\n笔记边界：scFoundation 与 CPA 缺席 single benchmark 有明确任务接口原因。",
+      "code": {
+        "file": "source/benchmark/src/collect_perturbation_predictions.R",
+        "start": 1,
+        "end": 81,
+        "sha256": "9f2c85799c497eb5569d068fd0b5c63d4ee98fd26d5409e697f63f2c78520d0e"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": "结构整理：按重构版精读笔记与脚本职责分组；仅静态审阅，未执行作者代码。"
+    },
+    {
+      "id": "representation",
+      "name": "固定线性模型替换 G/P（Fig.2b/c）",
+      "kind": "module-group",
+      "category": "custom",
+      "parent": null,
+      "x": 0,
+      "y": 0,
+      "description": "作用：固定 linear decoder，只替换 gene representation G 或 perturbation representation P。\n代码实际：包括 training PCA、scGPT/scFoundation gene embedding、GEARS pathway embedding 与 PCA P。\n笔记边界：这不是第三个完整模型 benchmark，而是 representation 贡献分析。",
+      "code": {
+        "file": "source/benchmark/src/extract_pert_embedding_pca.R",
+        "start": 1,
+        "end": 55,
+        "sha256": "21bcb3905da12fad7dcc56bf1423a2642135dfa5c6b2aa60ec9174ee2788d4ac"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": "结构整理：按重构版精读笔记与脚本职责分组；仅静态审阅，未执行作者代码。"
+    },
+    {
+      "id": "model-details",
+      "name": "模型实现与运行细节",
+      "kind": "module-group",
+      "category": "encoder",
+      "parent": null,
+      "x": 0,
+      "y": 0,
+      "description": "作用：集中查看各模型的输入、微调、扰动施加和 expression 输出方式。\n代码实际：scGPT、scFoundation、Geneformer、scBERT、UCE、GEARS、CPA，以及 Slurm 运行包装。\n笔记边界：多数 optimizer、batch size、learning rate 和 epoch schedule 论文未报告。",
+      "code": {
+        "file": "source/benchmark/src/run_scgpt.py",
+        "start": 1,
+        "end": 548,
+        "sha256": "7c8940e541fad1f1ae38bd405126170b4dd7c47df8b53434ebf65381fcc16af7"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": "结构整理：按重构版精读笔记与脚本职责分组；仅静态审阅，未执行作者代码。"
+    },
+    {
+      "id": "evidence-conclusions",
+      "name": "证据边界、冲突与结论",
+      "kind": "module-group",
+      "category": "evaluation",
+      "parent": null,
+      "x": 0,
+      "y": 0,
+      "description": "作用：收束结果、数据冲突、泄漏风险、公平性限制和最终结论。\n代码实际：分析与绘图工具服务论文图表和结果整理，不能自动裁决数值冲突。\n笔记边界：结论只适用于当前数据、split、模型实现和评价协议。",
+      "code": {
+        "file": "source/notebooks/util.R",
+        "start": 1,
+        "end": 319,
+        "sha256": "76028ae36678ffe6cde327dcddf052a88ba826c956952a6bd1a2ad7fdd0148a5"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": "结构整理：按重构版精读笔记与脚本职责分组；仅静态审阅，未执行作者代码。"
+    },
+    {
+      "id": "f-prepare",
+      "name": "准备扰动数据与实验 split",
+      "kind": "script",
+      "category": "data",
+      "parent": "question-map",
+      "x": 0,
+      "y": 0,
+      "description": "读取数据集，生成条件级表达矩阵，并产出训练/测试/验证划分。",
+      "code": {
+        "file": "source/benchmark/src/prepare_perturbation_data.py",
+        "start": 1,
+        "end": 126,
+        "sha256": "5fe1b9541ee2a711bc20dfebc63c354a1b98ced9784c992ed3c185a1a43b5c51"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": "结构整理：按重构版精读笔记与脚本职责分组；仅静态审阅，未执行作者代码。"
+    },
+    {
+      "id": "f-mean",
+      "name": "Mean baseline · 训练条件平均",
+      "kind": "script",
+      "category": "head",
+      "parent": "benchmark-single",
+      "x": 0,
+      "y": 0,
+      "description": "对每个 read-out gene 预测训练条件下所有 perturbation 的平均表达。",
+      "code": {
+        "file": "source/benchmark/src/run_mean_prediction.R",
+        "start": 1,
+        "end": 71,
+        "sha256": "09c57717b163f0167aa4f23bc97b0e7322c43984defadd48036e1e681e555d09"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": "结构整理：按重构版精读笔记与脚本职责分组；仅静态审阅，未执行作者代码。"
+    },
+    {
+      "id": "f-additive",
+      "name": "Additive baseline · 单扰动效应相加",
+      "kind": "script",
+      "category": "head",
+      "parent": "benchmark-double",
+      "x": 0,
+      "y": 0,
+      "description": "用单扰动均值相对 control 的变化相加，预测未见 double perturbation。",
+      "code": {
+        "file": "source/benchmark/src/run_additive_model.py",
+        "start": 1,
+        "end": 101,
+        "sha256": "413990d273f4f8fe1d0ef24308638feb62d48ef51367b5d1a3a2a3423ace6154"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": "结构整理：按重构版精读笔记与脚本职责分组；仅静态审阅，未执行作者代码。"
+    },
+    {
+      "id": "f-linear",
+      "name": "Training linear model · PCA-岭回归",
+      "kind": "script",
+      "category": "head",
+      "parent": "benchmark-single",
+      "x": 0,
+      "y": 0,
+      "description": "联合构造 G、P，拟合 ridge W，并通过 GWp_X+b 预测未见 perturbation。",
+      "code": {
+        "file": "source/benchmark/src/run_linear_pretrained_model.R",
+        "start": 1,
+        "end": 187,
+        "sha256": "49bda2a46b92c2b0b5bf263b957a3890dbdeff2d4837a94e6b0a397e0e38a6f8"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": "结构整理：按重构版精读笔记与脚本职责分组；仅静态审阅，未执行作者代码。"
+    },
+    {
+      "id": "f-transfer",
+      "name": "跨数据集 perturbation 迁移",
+      "kind": "script",
+      "category": "head",
+      "parent": "benchmark-single",
+      "x": 0,
+      "y": 0,
+      "description": "将线性模型学到的表示或预测规则迁移到另一数据集，检查迁移泛化。",
+      "code": {
+        "file": "source/benchmark/src/run_transfer_perturbation_prediction.R",
+        "start": 1,
+        "end": 117,
+        "sha256": "afbbd42c21325a41dac6444633f13f7fb28a80600ffb4023c81fa7e51aa6cf08"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": "结构整理：按重构版精读笔记与脚本职责分组；仅静态审阅，未执行作者代码。"
+    },
+    {
+      "id": "f-scgpt",
+      "name": "scGPT · 微调与表达预测",
+      "kind": "script",
+      "category": "encoder",
+      "parent": "model-details",
+      "x": 0,
+      "y": 0,
+      "description": "按 scGPT perturbation tutorial 训练并直接产生 predicted expression。",
+      "code": {
+        "file": "source/benchmark/src/run_scgpt.py",
+        "start": 1,
+        "end": 548,
+        "sha256": "7c8940e541fad1f1ae38bd405126170b4dd7c47df8b53434ebf65381fcc16af7"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": "结构整理：按重构版精读笔记与脚本职责分组；仅静态审阅，未执行作者代码。"
+    },
+    {
+      "id": "f-scgpt-ft",
+      "name": "scGPT 修改版微调模块",
+      "kind": "script",
+      "category": "encoder",
+      "parent": "model-details",
+      "x": 0,
+      "y": 0,
+      "description": "保存 scGPT 微调所需的 Identity 兼容层与数据集封装。",
+      "code": {
+        "file": "source/benchmark/src/finetune_modified.py",
+        "start": 1,
+        "end": 271,
+        "sha256": "c29b25459ded832c824eca239268e97d922b19d06a1e6d41fbd2ca05ef2213e8"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": "结构整理：按重构版精读笔记与脚本职责分组；仅静态审阅，未执行作者代码。"
+    },
+    {
+      "id": "f-scgpt-attn",
+      "name": "scGPT 注意力结果保存",
+      "kind": "script",
+      "category": "encoder",
+      "parent": "model-details",
+      "x": 0,
+      "y": 0,
+      "description": "保存 scGPT 注意力汇总结果，用于复现实验中间表示。",
+      "code": {
+        "file": "source/benchmark/src/attn_sum_save_modified.py",
+        "start": 1,
+        "end": 91,
+        "sha256": "f299a83382116bad5d478a60f3c9bc4e2d1589d4c8bb1faa0308a32f4de066b7"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": "结构整理：按重构版精读笔记与脚本职责分组；仅静态审阅，未执行作者代码。"
+    },
+    {
+      "id": "f-scfoundation",
+      "name": "scFoundation/GEARS fork · 表达变化预测",
+      "kind": "script",
+      "category": "encoder",
+      "parent": "model-details",
+      "x": 0,
+      "y": 0,
+      "description": "通过 GEARS v0.0.2 fork API 接收 perturbation 并输出 expression change prediction。",
+      "code": {
+        "file": "source/benchmark/src/run_scfoundation.py",
+        "start": 1,
+        "end": 113,
+        "sha256": "37bb0094ac960f96c09e84a6416028ad0925d99338ae2463c2ee32c00a5bfc82"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": "结构整理：按重构版精读笔记与脚本职责分组；仅静态审阅，未执行作者代码。"
+    },
+    {
+      "id": "f-geneformer",
+      "name": "Geneformer · in silico 扰动 + ridge decoder",
+      "kind": "script",
+      "category": "encoder",
+      "parent": "model-details",
+      "x": 0,
+      "y": 0,
+      "description": "微调 perturbation labels，执行 in silico perturbation，并用 ridge decoder 映射到 expression。",
+      "code": {
+        "file": "source/benchmark/src/run_geneformer.py",
+        "start": 1,
+        "end": 305,
+        "sha256": "0e9ccf2afb699ed0288e14e11cc6350b3e36a7b0a0b9273233472d943ddac9b4"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": "结构整理：按重构版精读笔记与脚本职责分组；仅静态审阅，未执行作者代码。"
+    },
+    {
+      "id": "f-scbert",
+      "name": "scBERT · 微调 + ridge decoder",
+      "kind": "script",
+      "category": "encoder",
+      "parent": "model-details",
+      "x": 0,
+      "y": 0,
+      "description": "微调 perturbation labels，构造 in silico 风格 embedding，再用 ridge decoder 预测 expression。",
+      "code": {
+        "file": "source/benchmark/src/run_scbert.py",
+        "start": 1,
+        "end": 230,
+        "sha256": "89217d121749ec8ae13a4638ac4689574ec744c92938614485cd8db50fb24bb2"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": "结构整理：按重构版精读笔记与脚本职责分组；仅静态审阅，未执行作者代码。"
+    },
+    {
+      "id": "f-uce",
+      "name": "UCE · zero-shot + ridge decoder",
+      "kind": "script",
+      "category": "encoder",
+      "parent": "model-details",
+      "x": 0,
+      "y": 0,
+      "description": "不微调 UCE；覆盖扰动 gene rows 取得 embedding，再用 ridge decoder 预测 expression。",
+      "code": {
+        "file": "source/benchmark/src/run_uce.py",
+        "start": 1,
+        "end": 173,
+        "sha256": "6d169bc649e75e0d4caab7dba965ade18aead82b3c7c78d23ecd306144ab65e7"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": "结构整理：按重构版精读笔记与脚本职责分组；仅静态审阅，未执行作者代码。"
+    },
+    {
+      "id": "f-gears",
+      "name": "GEARS · GO prior 扰动预测",
+      "kind": "script",
+      "category": "encoder",
+      "parent": "model-details",
+      "x": 0,
+      "y": 0,
+      "description": "使用 pathway membership 与 perturbation 条件训练 GEARS，并调用模型预测表达。",
+      "code": {
+        "file": "source/benchmark/src/run_gears.py",
+        "start": 1,
+        "end": 89,
+        "sha256": "01601a17300205b0b1f268dfea95b022fa4a718a9b99ffce0402645a9fbe08a7"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": "结构整理：按重构版精读笔记与脚本职责分组；仅静态审阅，未执行作者代码。"
+    },
+    {
+      "id": "f-cpa",
+      "name": "CPA · 组合扰动模型",
+      "kind": "script",
+      "category": "encoder",
+      "parent": "model-details",
+      "x": 0,
+      "y": 0,
+      "description": "按 Norman combinatorial tutorial 训练 CPA，并从 decoder 得到 perturbation expression prediction。",
+      "code": {
+        "file": "source/benchmark/src/run_cpa.py",
+        "start": 1,
+        "end": 184,
+        "sha256": "58524aaf8e3649fdaee4732d1ddf1ebc959e8266999d2aeb491eb831ec0fd707"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": "结构整理：按重构版精读笔记与脚本职责分组；仅静态审阅，未执行作者代码。"
+    },
+    {
+      "id": "f-ext-scgpt",
+      "name": "提取 scGPT gene embedding",
+      "kind": "script",
+      "category": "custom",
+      "parent": "representation",
+      "x": 0,
+      "y": 0,
+      "description": "从 scGPT 提取 gene embedding，供固定线性 decoder 替换 G。",
+      "code": {
+        "file": "source/benchmark/src/extract_gene_embedding_scgpt.py",
+        "start": 1,
+        "end": 120,
+        "sha256": "a246fd4c7ef74884fa5f551de3980cce92165fd865137c40f6bcc671a79fe1a1"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": "结构整理：按重构版精读笔记与脚本职责分组；仅静态审阅，未执行作者代码。"
+    },
+    {
+      "id": "f-ext-scfoundation",
+      "name": "提取 scFoundation gene embedding",
+      "kind": "script",
+      "category": "custom",
+      "parent": "representation",
+      "x": 0,
+      "y": 0,
+      "description": "从 scFoundation 的 pos_emb.weight 提取 gene embedding，供 G 替换实验。",
+      "code": {
+        "file": "source/benchmark/src/extract_gene_embedding_scfoundation.py",
+        "start": 1,
+        "end": 37,
+        "sha256": "0ba2997e9ec69b2701ad0777b39d812ee798a5f6e16b58e2845539096e52af29"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": "结构整理：按重构版精读笔记与脚本职责分组；仅静态审阅，未执行作者代码。"
+    },
+    {
+      "id": "f-ext-gears",
+      "name": "提取 GEARS pathway perturbation embedding",
+      "kind": "script",
+      "category": "custom",
+      "parent": "representation",
+      "x": 0,
+      "y": 0,
+      "description": "从 GEARS 的 pathway membership 构造 spectral perturbation embedding。",
+      "code": {
+        "file": "source/benchmark/src/extract_pert_embedding_from_gears.R",
+        "start": 1,
+        "end": 38,
+        "sha256": "076abdf1057a6f88c762f3e245dd6ce51e65f46f6de7a2bd8b53c4e3c194869c"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": "结构整理：按重构版精读笔记与脚本职责分组；仅静态审阅，未执行作者代码。"
+    },
+    {
+      "id": "f-ext-pca",
+      "name": "提取 PCA perturbation embedding",
+      "kind": "script",
+      "category": "custom",
+      "parent": "representation",
+      "x": 0,
+      "y": 0,
+      "description": "对 reference perturbation means 做低维 PCA，生成 perturbation embedding P。",
+      "code": {
+        "file": "source/benchmark/src/extract_pert_embedding_pca.R",
+        "start": 1,
+        "end": 55,
+        "sha256": "21bcb3905da12fad7dcc56bf1423a2642135dfa5c6b2aa60ec9174ee2788d4ac"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": "结构整理：按重构版精读笔记与脚本职责分组；仅静态审阅，未执行作者代码。"
+    },
+    {
+      "id": "f-truth",
+      "name": "生成组合扰动真值",
+      "kind": "script",
+      "category": "evaluation",
+      "parent": "benchmark-double",
+      "x": 0,
+      "y": 0,
+      "description": "从留出的 double perturbation 条件生成评价用 ground-truth expression。",
+      "code": {
+        "file": "source/benchmark/src/run_ground_truth_for_combinatorial_perturbations.py",
+        "start": 1,
+        "end": 83,
+        "sha256": "acfebab2a4004786c69dc212a6260ef22780e72f6fbb6696b94384b4276db8ac"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": "结构整理：按重构版精读笔记与脚本职责分组；仅静态审阅，未执行作者代码。"
+    },
+    {
+      "id": "f-collect",
+      "name": "汇总模型预测结果",
+      "kind": "script",
+      "category": "evaluation",
+      "parent": "fig2a-comparison",
+      "x": 0,
+      "y": 0,
+      "description": "读取各模型 prediction 与 gene order，统一整理供评价和绘图。",
+      "code": {
+        "file": "source/benchmark/src/collect_perturbation_predictions.R",
+        "start": 1,
+        "end": 81,
+        "sha256": "9f2c85799c497eb5569d068fd0b5c63d4ee98fd26d5409e697f63f2c78520d0e"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": "结构整理：按重构版精读笔记与脚本职责分组；仅静态审阅，未执行作者代码。"
+    },
+    {
+      "id": "f-util",
+      "name": "分析与可视化工具",
+      "kind": "script",
+      "category": "custom",
+      "parent": "evidence-conclusions",
+      "x": 0,
+      "y": 0,
+      "description": "提供结果读取、指标汇总和论文图表所需的 R 工具函数。",
+      "code": {
+        "file": "source/notebooks/util.R",
+        "start": 1,
+        "end": 319,
+        "sha256": "76028ae36678ffe6cde327dcddf052a88ba826c956952a6bd1a2ad7fdd0148a5"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": "结构整理：按重构版精读笔记与脚本职责分组；仅静态审阅，未执行作者代码。"
+    },
+    {
+      "id": "f-submit",
+      "name": "定义并调度 benchmark 作业",
+      "kind": "script",
+      "category": "training",
+      "parent": "model-details",
+      "x": 0,
+      "y": 0,
+      "description": "定义 single/double perturbation 作业、数据集、seed 与 Slurm 运行参数。",
+      "code": {
+        "file": "source/benchmark/submission/run_perturbation_benchmark.R",
+        "start": 1,
+        "end": 139,
+        "sha256": "668579dfe76226c8433aad4a44a1db44c4e103e0b891efa1b29a5b7e02c20623"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": "结构整理：按重构版精读笔记与脚本职责分组；仅静态审阅，未执行作者代码。"
+    },
+    {
+      "id": "f-wrap",
+      "name": "包装各模型运行脚本",
+      "kind": "script",
+      "category": "training",
+      "parent": "model-details",
+      "x": 0,
+      "y": 0,
+      "description": "把模型脚本和命令行参数包装为统一作业执行单元。",
+      "code": {
+        "file": "source/benchmark/submission/wrap_scripts.R",
+        "start": 1,
+        "end": 135,
+        "sha256": "2a0a7e918fc1c3f8ac649258f8311ee891df407fcfd7bf8b12b28aba1c388fbd"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": "结构整理：按重构版精读笔记与脚本职责分组；仅静态审阅，未执行作者代码。"
+    },
+    {
+      "id": "faeeb7ad83b74604b3bb9969b063550e",
+      "name": "SCDataset",
+      "kind": "class",
+      "category": "data",
+      "parent": "f-scgpt-ft",
+      "x": 0,
+      "y": 0,
+      "description": "Static source declaration; behavior and paper meaning require review.",
+      "code": {
+        "file": "source/benchmark/src/finetune_modified.py",
+        "start": 77,
+        "end": 93,
+        "sha256": "c29b25459ded832c824eca239268e97d922b19d06a1e6d41fbd2ca05ef2213e8"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": ""
+    },
+    {
+      "id": "e7c95557a3de49509903d15e0c05542a",
+      "name": "__init__",
+      "kind": "function",
+      "category": "custom",
+      "parent": "f-scgpt-ft",
+      "x": 260,
+      "y": 0,
+      "description": "Static source declaration; behavior and paper meaning require review.",
+      "code": {
+        "file": "source/benchmark/src/finetune_modified.py",
+        "start": 78,
+        "end": 81,
+        "sha256": "c29b25459ded832c824eca239268e97d922b19d06a1e6d41fbd2ca05ef2213e8"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": ""
+    },
+    {
+      "id": "1cfaaff74e324bbcb3225f353c524023",
+      "name": "__getitem__",
+      "kind": "function",
+      "category": "custom",
+      "parent": "f-scgpt-ft",
+      "x": 520,
+      "y": 0,
+      "description": "Static source declaration; behavior and paper meaning require review.",
+      "code": {
+        "file": "source/benchmark/src/finetune_modified.py",
+        "start": 83,
+        "end": 90,
+        "sha256": "c29b25459ded832c824eca239268e97d922b19d06a1e6d41fbd2ca05ef2213e8"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": ""
+    },
+    {
+      "id": "d23d6c6511aa465c8d8b9659a7d4ce6b",
+      "name": "__len__",
+      "kind": "function",
+      "category": "custom",
+      "parent": "f-scgpt-ft",
+      "x": 0,
+      "y": 150,
+      "description": "Static source declaration; behavior and paper meaning require review.",
+      "code": {
+        "file": "source/benchmark/src/finetune_modified.py",
+        "start": 92,
+        "end": 93,
+        "sha256": "c29b25459ded832c824eca239268e97d922b19d06a1e6d41fbd2ca05ef2213e8"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": ""
+    },
+    {
+      "id": "9cb4d7d4c48c44d9bb72cccd0cec2af9",
+      "name": "Identity",
+      "kind": "class",
+      "category": "custom",
+      "parent": "f-scgpt-ft",
+      "x": 260,
+      "y": 150,
+      "description": "Static source declaration; behavior and paper meaning require review.",
+      "code": {
+        "file": "source/benchmark/src/finetune_modified.py",
+        "start": 96,
+        "end": 121,
+        "sha256": "c29b25459ded832c824eca239268e97d922b19d06a1e6d41fbd2ca05ef2213e8"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": ""
+    },
+    {
+      "id": "b9b86f8f61c0408c88fd3e8557a3f617",
+      "name": "__init__",
+      "kind": "function",
+      "category": "custom",
+      "parent": "f-scgpt-ft",
+      "x": 520,
+      "y": 150,
+      "description": "Static source declaration; behavior and paper meaning require review.",
+      "code": {
+        "file": "source/benchmark/src/finetune_modified.py",
+        "start": 97,
+        "end": 107,
+        "sha256": "c29b25459ded832c824eca239268e97d922b19d06a1e6d41fbd2ca05ef2213e8"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": ""
+    },
+    {
+      "id": "3824283ba5874555887e5cbc98848624",
+      "name": "forward",
+      "kind": "function",
+      "category": "custom",
+      "parent": "f-scgpt-ft",
+      "x": 0,
+      "y": 300,
+      "description": "Static source declaration; behavior and paper meaning require review.",
+      "code": {
+        "file": "source/benchmark/src/finetune_modified.py",
+        "start": 109,
+        "end": 121,
+        "sha256": "c29b25459ded832c824eca239268e97d922b19d06a1e6d41fbd2ca05ef2213e8"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": ""
+    },
+    {
+      "id": "0af064bde4f24f028d706b65e7d1f935",
+      "name": "normalize_condition_names",
+      "kind": "function",
+      "category": "custom",
+      "parent": "f-prepare",
+      "x": 260,
+      "y": 300,
+      "description": "Static source declaration; behavior and paper meaning require review.",
+      "code": {
+        "file": "source/benchmark/src/prepare_perturbation_data.py",
+        "start": 33,
+        "end": 37,
+        "sha256": "5fe1b9541ee2a711bc20dfebc63c354a1b98ced9784c992ed3c185a1a43b5c51"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": ""
+    },
+    {
+      "id": "25318feaed0544b69136b4088b0bdbed",
+      "name": "mean_gene_expr_for_condition",
+      "kind": "function",
+      "category": "custom",
+      "parent": "f-additive",
+      "x": 520,
+      "y": 300,
+      "description": "Static source declaration; behavior and paper meaning require review.",
+      "code": {
+        "file": "source/benchmark/src/run_additive_model.py",
+        "start": 45,
+        "end": 47,
+        "sha256": "413990d273f4f8fe1d0ef24308638feb62d48ef51367b5d1a3a2a3423ace6154"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": ""
+    },
+    {
+      "id": "c58fa1f27f1b48e1b689ea2b2742d23a",
+      "name": "sum_single_predictions",
+      "kind": "function",
+      "category": "head",
+      "parent": "f-additive",
+      "x": 0,
+      "y": 450,
+      "description": "Static source declaration; behavior and paper meaning require review.",
+      "code": {
+        "file": "source/benchmark/src/run_additive_model.py",
+        "start": 49,
+        "end": 53,
+        "sha256": "413990d273f4f8fe1d0ef24308638feb62d48ef51367b5d1a3a2a3423ace6154"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": ""
+    },
+    {
+      "id": "a9296f19bf8942008a37c87130b9838c",
+      "name": "mean_gene_expr_for_condition",
+      "kind": "function",
+      "category": "custom",
+      "parent": "f-cpa",
+      "x": 260,
+      "y": 450,
+      "description": "Static source declaration; behavior and paper meaning require review.",
+      "code": {
+        "file": "source/benchmark/src/run_cpa.py",
+        "start": 164,
+        "end": 166,
+        "sha256": "58524aaf8e3649fdaee4732d1ddf1ebc959e8266999d2aeb491eb831ec0fd707"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": ""
+    },
+    {
+      "id": "c0d7df8c4fb0419e8a12be6848024ff8",
+      "name": "tokenize_adata",
+      "kind": "function",
+      "category": "data",
+      "parent": "f-geneformer",
+      "x": 520,
+      "y": 450,
+      "description": "Static source declaration; behavior and paper meaning require review.",
+      "code": {
+        "file": "source/benchmark/src/run_geneformer.py",
+        "start": 110,
+        "end": 120,
+        "sha256": "0e9ccf2afb699ed0288e14e11cc6350b3e36a7b0a0b9273233472d943ddac9b4"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": ""
+    },
+    {
+      "id": "d8e8297349e34c648b8fc029676783ea",
+      "name": "get_perturbed_embedding",
+      "kind": "function",
+      "category": "custom",
+      "parent": "f-geneformer",
+      "x": 0,
+      "y": 600,
+      "description": "Static source declaration; behavior and paper meaning require review.",
+      "code": {
+        "file": "source/benchmark/src/run_geneformer.py",
+        "start": 155,
+        "end": 219,
+        "sha256": "0e9ccf2afb699ed0288e14e11cc6350b3e36a7b0a0b9273233472d943ddac9b4"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": ""
+    },
+    {
+      "id": "5a436f208eb34d4482feef1917ff9639",
+      "name": "make_group_perturbation_batch",
+      "kind": "function",
+      "category": "custom",
+      "parent": "f-geneformer",
+      "x": 260,
+      "y": 600,
+      "description": "Static source declaration; behavior and paper meaning require review.",
+      "code": {
+        "file": "source/benchmark/src/run_geneformer.py",
+        "start": 165,
+        "end": 192,
+        "sha256": "0e9ccf2afb699ed0288e14e11cc6350b3e36a7b0a0b9273233472d943ddac9b4"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": ""
+    },
+    {
+      "id": "c05513c78cbb44f2b6456b4d5fc68884",
+      "name": "mean_gene_expr_for_condition",
+      "kind": "function",
+      "category": "custom",
+      "parent": "f-geneformer",
+      "x": 520,
+      "y": 600,
+      "description": "Static source declaration; behavior and paper meaning require review.",
+      "code": {
+        "file": "source/benchmark/src/run_geneformer.py",
+        "start": 263,
+        "end": 265,
+        "sha256": "0e9ccf2afb699ed0288e14e11cc6350b3e36a7b0a0b9273233472d943ddac9b4"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": ""
+    },
+    {
+      "id": "f1b80e68531347758afa8ba45ae9ed03",
+      "name": "mean_gene_expr_for_condition",
+      "kind": "function",
+      "category": "custom",
+      "parent": "f-truth",
+      "x": 0,
+      "y": 750,
+      "description": "Static source declaration; behavior and paper meaning require review.",
+      "code": {
+        "file": "source/benchmark/src/run_ground_truth_for_combinatorial_perturbations.py",
+        "start": 39,
+        "end": 41,
+        "sha256": "acfebab2a4004786c69dc212a6260ef22780e72f6fbb6696b94384b4276db8ac"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": ""
+    },
+    {
+      "id": "84e8e090f39b43b49fafaea97434380e",
+      "name": "se_gene_expr_for_condition",
+      "kind": "function",
+      "category": "custom",
+      "parent": "f-truth",
+      "x": 260,
+      "y": 750,
+      "description": "Static source declaration; behavior and paper meaning require review.",
+      "code": {
+        "file": "source/benchmark/src/run_ground_truth_for_combinatorial_perturbations.py",
+        "start": 43,
+        "end": 45,
+        "sha256": "acfebab2a4004786c69dc212a6260ef22780e72f6fbb6696b94384b4276db8ac"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": ""
+    },
+    {
+      "id": "0dc8193815bd4b9cbf9c4b39a9136734",
+      "name": "_find_free_port",
+      "kind": "function",
+      "category": "custom",
+      "parent": "f-scbert",
+      "x": 520,
+      "y": 750,
+      "description": "Static source declaration; behavior and paper meaning require review.",
+      "code": {
+        "file": "source/benchmark/src/run_scbert.py",
+        "start": 114,
+        "end": 124,
+        "sha256": "89217d121749ec8ae13a4638ac4689574ec744c92938614485cd8db50fb24bb2"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": ""
+    },
+    {
+      "id": "5f14d2d670f4472dafaf1f52703378f6",
+      "name": "mean_gene_expr_for_condition",
+      "kind": "function",
+      "category": "custom",
+      "parent": "f-scbert",
+      "x": 0,
+      "y": 900,
+      "description": "Static source declaration; behavior and paper meaning require review.",
+      "code": {
+        "file": "source/benchmark/src/run_scbert.py",
+        "start": 188,
+        "end": 190,
+        "sha256": "89217d121749ec8ae13a4638ac4689574ec744c92938614485cd8db50fb24bb2"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": ""
+    },
+    {
+      "id": "13db8036d31747a8afa56ace1f7efa2b",
+      "name": "train",
+      "kind": "function",
+      "category": "training",
+      "parent": "f-scgpt",
+      "x": 260,
+      "y": 900,
+      "description": "Train the model for one epoch.",
+      "code": {
+        "file": "source/benchmark/src/run_scgpt.py",
+        "start": 258,
+        "end": 365,
+        "sha256": "7c8940e541fad1f1ae38bd405126170b4dd7c47df8b53434ebf65381fcc16af7"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": ""
+    },
+    {
+      "id": "b7e0c2c028ee4568a30613ef6ae4f999",
+      "name": "evaluate",
+      "kind": "function",
+      "category": "evaluation",
+      "parent": "f-scgpt",
+      "x": 520,
+      "y": 900,
+      "description": "Evaluate the model on the evaluation data.",
+      "code": {
+        "file": "source/benchmark/src/run_scgpt.py",
+        "start": 368,
+        "end": 441,
+        "sha256": "7c8940e541fad1f1ae38bd405126170b4dd7c47df8b53434ebf65381fcc16af7"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": ""
+    },
+    {
+      "id": "6ba4d02c4b6647c19241d219b9461508",
+      "name": "predict",
+      "kind": "function",
+      "category": "head",
+      "parent": "f-scgpt",
+      "x": 0,
+      "y": 1050,
+      "description": "Static source declaration; behavior and paper meaning require review.",
+      "code": {
+        "file": "source/benchmark/src/run_scgpt.py",
+        "start": 443,
+        "end": 486,
+        "sha256": "7c8940e541fad1f1ae38bd405126170b4dd7c47df8b53434ebf65381fcc16af7"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": ""
+    },
+    {
+      "id": "32810d99239140a9b77fd57161038407",
+      "name": "mean_gene_expr_for_condition",
+      "kind": "function",
+      "category": "custom",
+      "parent": "f-uce",
+      "x": 260,
+      "y": 1050,
+      "description": "Static source declaration; behavior and paper meaning require review.",
+      "code": {
+        "file": "source/benchmark/src/run_uce.py",
+        "start": 131,
+        "end": 133,
+        "sha256": "6d169bc649e75e0d4caab7dba965ade18aead82b3c7c78d23ecd306144ab65e7"
+      },
+      "inputs": [],
+      "outputs": [],
+      "parameters": {},
+      "implementation_id": null,
+      "status": "candidate",
+      "selection_reason": ""
+    }
+  ],
+  "edges": [
+    {
+      "id": "n1",
+      "source": "question-map",
+      "target": "benchmark-double",
+      "label": "研究问题：未见双扰动预测"
+    },
+    {
+      "id": "n2",
+      "source": "question-map",
+      "target": "benchmark-single",
+      "label": "研究问题：未见单扰动预测"
+    },
+    {
+      "id": "n3",
+      "source": "benchmark-double",
+      "target": "model-details",
+      "label": "推断：调用论文比较模型"
+    },
+    {
+      "id": "n4",
+      "source": "benchmark-single",
+      "target": "model-details",
+      "label": "推断：调用论文比较模型"
+    },
+    {
+      "id": "n5",
+      "source": "benchmark-single",
+      "target": "fig2a-comparison",
+      "label": "评价协议：完整模型 vs mean/linear"
+    },
+    {
+      "id": "n6",
+      "source": "model-details",
+      "target": "fig2a-comparison",
+      "label": "推断：完整模型预测进入比较"
+    },
+    {
+      "id": "n7",
+      "source": "fig2a-comparison",
+      "target": "representation",
+      "label": "进一步拆分：固定 linear decoder"
+    },
+    {
+      "id": "n8",
+      "source": "model-details",
+      "target": "representation",
+      "label": "推断：模型提供 G/P 或 embedding 入口"
+    },
+    {
+      "id": "n9",
+      "source": "benchmark-double",
+      "target": "evidence-conclusions",
+      "label": "推断：双扰动结果进入证据汇总"
+    },
+    {
+      "id": "n10",
+      "source": "benchmark-single",
+      "target": "evidence-conclusions",
+      "label": "推断：单扰动结果进入证据汇总"
+    },
+    {
+      "id": "n11",
+      "source": "fig2a-comparison",
+      "target": "evidence-conclusions",
+      "label": "推断：完整模型公平比较结论"
+    },
+    {
+      "id": "n12",
+      "source": "representation",
+      "target": "evidence-conclusions",
+      "label": "推断：representation 贡献结论"
+    }
+  ],
+  "checks": {
+    "source_mapping": {
+      "status": "pass",
+      "details": []
+    },
+    "interfaces": {
+      "status": "pending",
+      "details": [
+        "n1: explicit single input/output port unavailable",
+        "n2: explicit single input/output port unavailable",
+        "n3: explicit single input/output port unavailable",
+        "n4: explicit single input/output port unavailable",
+        "n5: explicit single input/output port unavailable",
+        "n6: explicit single input/output port unavailable",
+        "n7: explicit single input/output port unavailable",
+        "n8: explicit single input/output port unavailable",
+        "n9: explicit single input/output port unavailable",
+        "n10: explicit single input/output port unavailable",
+        "n11: explicit single input/output port unavailable",
+        "n12: explicit single input/output port unavailable",
+        "Static declared-port check only; not a runtime or semantic guarantee."
+      ]
+    },
+    "execution": {
+      "status": "pending",
+      "details": [
+        "Imported code is never automatically executed."
+      ]
+    },
+    "paper_fidelity": {
+      "status": "pending",
+      "details": [
+        "Assistant must compare note/paper with code; static parsing is insufficient."
+      ]
+    },
+    "sync": {
+      "status": "pass",
+      "details": []
+    }
+  },
+  "files": [
+    "source/LICENSE.md",
+    "source/README.md",
+    "source/benchmark/README.md",
+    "source/benchmark/conda_environments/cpa_env3.yml",
+    "source/benchmark/conda_environments/flashattn_env.yml",
+    "source/benchmark/conda_environments/gears_env2.yml",
+    "source/benchmark/conda_environments/geneformer_env.yml",
+    "source/benchmark/conda_environments/scbert_env.yml",
+    "source/benchmark/conda_environments/scfoundation_env.yml",
+    "source/benchmark/conda_environments/uce_env.yml",
+    "source/benchmark/renv.lock",
+    "source/benchmark/renv/activate.R",
+    "source/benchmark/src/attn_sum_save_modified.py",
+    "source/benchmark/src/collect_perturbation_predictions.R",
+    "source/benchmark/src/extract_gene_embedding_scfoundation.py",
+    "source/benchmark/src/extract_gene_embedding_scgpt.py",
+    "source/benchmark/src/extract_pert_embedding_from_gears.R",
+    "source/benchmark/src/extract_pert_embedding_pca.R",
+    "source/benchmark/src/finetune_modified.py",
+    "source/benchmark/src/prepare_perturbation_data.py",
+    "source/benchmark/src/run_additive_model.py",
+    "source/benchmark/src/run_cpa.py",
+    "source/benchmark/src/run_gears.py",
+    "source/benchmark/src/run_geneformer.py",
+    "source/benchmark/src/run_ground_truth_for_combinatorial_perturbations.py",
+    "source/benchmark/src/run_linear_pretrained_model.R",
+    "source/benchmark/src/run_mean_prediction.R",
+    "source/benchmark/src/run_scbert.py",
+    "source/benchmark/src/run_scfoundation.py",
+    "source/benchmark/src/run_scgpt.py",
+    "source/benchmark/src/run_transfer_perturbation_prediction.R",
+    "source/benchmark/src/run_uce.py",
+    "source/benchmark/submission/run_perturbation_benchmark.R",
+    "source/benchmark/submission/wrap_scripts.R",
+    "source/copy_benchmark_project.sh",
+    "source/notebooks/util.R",
+    "source/render_notebooks.sh",
+    "source/renv.lock",
+    "source/renv/activate.R",
+    "source/renv/settings.json"
+  ],
+  "exports": [],
+  "tasks": [],
+  "warnings": [
+    "AST candidate decomposition only: containment is not tensor dataflow.",
+    "source/.Rprofile (excluded file type or sensitive name)",
+    "source/.gitignore (excluded file type or sensitive name)",
+    "source/.renvignore (excluded file type or sensitive name)",
+    "source/perturbation_prediction-figures.Rproj (excluded file type or sensitive name)",
+    "source/benchmark/.Rprofile (excluded file type or sensitive name)",
+    "source/illustrations/model_comparison.ai (excluded file type or sensitive name)",
+    "source/illustrations/model_comparisonArtboard 1.pdf (excluded file type or sensitive name)",
+    "source/illustrations/model_comparisonArtboard 1@16x.png (excluded file type or sensitive name)",
+    "source/notebooks/dataset_overview.Rmd (excluded file type or sensitive name)",
+    "source/notebooks/dataset_overview.html (excluded file type or sensitive name)",
+    "source/notebooks/double_perturbation_analysis.Rmd (excluded file type or sensitive name)",
+    "source/notebooks/double_perturbation_analysis.html (excluded file type or sensitive name)",
+    "source/notebooks/single_perturbation_analysis.Rmd (excluded file type or sensitive name)",
+    "source/notebooks/single_perturbation_analysis.html (excluded file type or sensitive name)",
+    "source/plots/perturbation_prediction.pdf (excluded file type or sensitive name)",
+    "source/plots/response-deep_learning_specific_calls.pdf (excluded file type or sensitive name)",
+    "source/plots/single_perturbation_prediction.pdf (excluded file type or sensitive name)",
+    "source/plots/suppl-dataset_overview.pdf (excluded file type or sensitive name)",
+    "source/plots/suppl-k562_rpe1_transfer.pdf (excluded file type or sensitive name)",
+    "source/plots/suppl-non_additive_gene_reoccurence.pdf (excluded file type or sensitive name)",
+    "source/plots/suppl-pearson_delta_performance.pdf (excluded file type or sensitive name)",
+    "source/plots/suppl-pearson_delta_performance_single_pert.pdf (excluded file type or sensitive name)",
+    "source/plots/suppl-prediction_variation.pdf (excluded file type or sensitive name)",
+    "source/plots/suppl-qqplot.pdf (excluded file type or sensitive name)",
+    "source/plots/suppl-resource_usage.pdf (excluded file type or sensitive name)",
+    "source/plots/suppl-roc_curves.pdf (excluded file type or sensitive name)",
+    "source/plots/suppl-top_gene_plots.pdf (excluded file type or sensitive name)",
+    "source/renv/.gitignore (excluded file type or sensitive name)",
+    "source/source_data/perturbation_prediction.xlsx (excluded file type or sensitive name)",
+    "source/source_data/single_perturbation_prediction.xlsx (excluded file type or sensitive name)",
+    "source/source_data/suppl-dataset_overview.xlsx (excluded file type or sensitive name)",
+    "source/source_data/suppl-k562_rpe1_transfer.xlsx (excluded file type or sensitive name)",
+    "source/source_data/suppl-non_additive_gene_reoccurence.xlsx (excluded file type or sensitive name)",
+    "source/source_data/suppl-pearson_delta_performance.xlsx (excluded file type or sensitive name)",
+    "source/source_data/suppl-pearson_delta_performance_single_pert.xlsx (excluded file type or sensitive name)",
+    "source/source_data/suppl-qqplot.xlsx (excluded file type or sensitive name)",
+    "source/source_data/suppl-resource_usage.xlsx (excluded file type or sensitive name)",
+    "source/source_data/suppl-top_gene_plots.xlsx (excluded file type or sensitive name)"
+  ],
+  "source_hashes": {
+    "source/LICENSE.md": "5364c7364a3e5dfffb08375ef2c67a449ffbb466483ba5b1cf79eeb20137753a",
+    "source/README.md": "5384b6c44f3df786212c6549b84a8482d5fa234ed66a69728899dd59c94e335c",
+    "source/benchmark/README.md": "82fe232c61a42b748fa541997f380da9506be96d7b7fd3a9ba58aeac21452e8e",
+    "source/benchmark/conda_environments/cpa_env3.yml": "1443175e276235d1e101e4fee284a0b8e7dba72593548bd58c4b07efa94a5ff6",
+    "source/benchmark/conda_environments/flashattn_env.yml": "0c1548b60ef75c06e8edabbebd15b345c229178589efe5a8ecd9071345ad0106",
+    "source/benchmark/conda_environments/gears_env2.yml": "347f2bc9df7b32b4ddf192ec5a1d9ede9d057641e59d72cade28d6c8317ba246",
+    "source/benchmark/conda_environments/geneformer_env.yml": "17bf2e5dd713f22ee4b73dfca150084b06595ec377eac2ba0ebb011e9a521aba",
+    "source/benchmark/conda_environments/scbert_env.yml": "d3db91c86595eaf11c7a330c7985801ef97bdc241dfb415b4baa240cc44442d9",
+    "source/benchmark/conda_environments/scfoundation_env.yml": "8ccb30451892b017194327bbde6da706de0d225a3712d0aae173d905979ecb2e",
+    "source/benchmark/conda_environments/uce_env.yml": "2284d95105bda8e76a9bcf78eb8a5ff475a3d230004a306c413171f3a95b53de",
+    "source/benchmark/renv.lock": "9365c447bbc0fcd4747d69ecd9990671843509ffd4b14aa3f72eadcde4d8eb97",
+    "source/benchmark/renv/activate.R": "4892dac8acf8ecd017d6b11e3b5bbe62615ae9288a9b1ec90da73d6c54fe4d73",
+    "source/benchmark/src/attn_sum_save_modified.py": "f299a83382116bad5d478a60f3c9bc4e2d1589d4c8bb1faa0308a32f4de066b7",
+    "source/benchmark/src/collect_perturbation_predictions.R": "9f2c85799c497eb5569d068fd0b5c63d4ee98fd26d5409e697f63f2c78520d0e",
+    "source/benchmark/src/extract_gene_embedding_scfoundation.py": "0ba2997e9ec69b2701ad0777b39d812ee798a5f6e16b58e2845539096e52af29",
+    "source/benchmark/src/extract_gene_embedding_scgpt.py": "a246fd4c7ef74884fa5f551de3980cce92165fd865137c40f6bcc671a79fe1a1",
+    "source/benchmark/src/extract_pert_embedding_from_gears.R": "076abdf1057a6f88c762f3e245dd6ce51e65f46f6de7a2bd8b53c4e3c194869c",
+    "source/benchmark/src/extract_pert_embedding_pca.R": "21bcb3905da12fad7dcc56bf1423a2642135dfa5c6b2aa60ec9174ee2788d4ac",
+    "source/benchmark/src/finetune_modified.py": "c29b25459ded832c824eca239268e97d922b19d06a1e6d41fbd2ca05ef2213e8",
+    "source/benchmark/src/prepare_perturbation_data.py": "5fe1b9541ee2a711bc20dfebc63c354a1b98ced9784c992ed3c185a1a43b5c51",
+    "source/benchmark/src/run_additive_model.py": "413990d273f4f8fe1d0ef24308638feb62d48ef51367b5d1a3a2a3423ace6154",
+    "source/benchmark/src/run_cpa.py": "58524aaf8e3649fdaee4732d1ddf1ebc959e8266999d2aeb491eb831ec0fd707",
+    "source/benchmark/src/run_gears.py": "01601a17300205b0b1f268dfea95b022fa4a718a9b99ffce0402645a9fbe08a7",
+    "source/benchmark/src/run_geneformer.py": "0e9ccf2afb699ed0288e14e11cc6350b3e36a7b0a0b9273233472d943ddac9b4",
+    "source/benchmark/src/run_ground_truth_for_combinatorial_perturbations.py": "acfebab2a4004786c69dc212a6260ef22780e72f6fbb6696b94384b4276db8ac",
+    "source/benchmark/src/run_linear_pretrained_model.R": "49bda2a46b92c2b0b5bf263b957a3890dbdeff2d4837a94e6b0a397e0e38a6f8",
+    "source/benchmark/src/run_mean_prediction.R": "09c57717b163f0167aa4f23bc97b0e7322c43984defadd48036e1e681e555d09",
+    "source/benchmark/src/run_scbert.py": "89217d121749ec8ae13a4638ac4689574ec744c92938614485cd8db50fb24bb2",
+    "source/benchmark/src/run_scfoundation.py": "37bb0094ac960f96c09e84a6416028ad0925d99338ae2463c2ee32c00a5bfc82",
+    "source/benchmark/src/run_scgpt.py": "7c8940e541fad1f1ae38bd405126170b4dd7c47df8b53434ebf65381fcc16af7",
+    "source/benchmark/src/run_transfer_perturbation_prediction.R": "afbbd42c21325a41dac6444633f13f7fb28a80600ffb4023c81fa7e51aa6cf08",
+    "source/benchmark/src/run_uce.py": "6d169bc649e75e0d4caab7dba965ade18aead82b3c7c78d23ecd306144ab65e7",
+    "source/benchmark/submission/run_perturbation_benchmark.R": "668579dfe76226c8433aad4a44a1db44c4e103e0b891efa1b29a5b7e02c20623",
+    "source/benchmark/submission/wrap_scripts.R": "2a0a7e918fc1c3f8ac649258f8311ee891df407fcfd7bf8b12b28aba1c388fbd",
+    "source/copy_benchmark_project.sh": "69da68f9b2a4de8d0ba0f39baceb0cc222b4a92a110561d182d5e38799a75b79",
+    "source/notebooks/util.R": "76028ae36678ffe6cde327dcddf052a88ba826c956952a6bd1a2ad7fdd0148a5",
+    "source/render_notebooks.sh": "31c687684a987bbe7ebf4b2a6a6c64b9694619513888f0848b4b1f6fd40891ec",
+    "source/renv.lock": "39544b0f181ea508ed8e6167179c7b801fc357572656330b61f2c7ef17e8509b",
+    "source/renv/activate.R": "4892dac8acf8ecd017d6b11e3b5bbe62615ae9288a9b1ec90da73d6c54fe4d73",
+    "source/renv/settings.json": "965ebd30972d4dee75c91a2ba32242c64d5d0a4c6f1d386f6c73b3979ee4dc19"
+  },
+  "original_hashes": {
+    "source/LICENSE.md": "5364c7364a3e5dfffb08375ef2c67a449ffbb466483ba5b1cf79eeb20137753a",
+    "source/README.md": "5384b6c44f3df786212c6549b84a8482d5fa234ed66a69728899dd59c94e335c",
+    "source/benchmark/README.md": "82fe232c61a42b748fa541997f380da9506be96d7b7fd3a9ba58aeac21452e8e",
+    "source/benchmark/conda_environments/cpa_env3.yml": "1443175e276235d1e101e4fee284a0b8e7dba72593548bd58c4b07efa94a5ff6",
+    "source/benchmark/conda_environments/flashattn_env.yml": "0c1548b60ef75c06e8edabbebd15b345c229178589efe5a8ecd9071345ad0106",
+    "source/benchmark/conda_environments/gears_env2.yml": "347f2bc9df7b32b4ddf192ec5a1d9ede9d057641e59d72cade28d6c8317ba246",
+    "source/benchmark/conda_environments/geneformer_env.yml": "17bf2e5dd713f22ee4b73dfca150084b06595ec377eac2ba0ebb011e9a521aba",
+    "source/benchmark/conda_environments/scbert_env.yml": "d3db91c86595eaf11c7a330c7985801ef97bdc241dfb415b4baa240cc44442d9",
+    "source/benchmark/conda_environments/scfoundation_env.yml": "8ccb30451892b017194327bbde6da706de0d225a3712d0aae173d905979ecb2e",
+    "source/benchmark/conda_environments/uce_env.yml": "2284d95105bda8e76a9bcf78eb8a5ff475a3d230004a306c413171f3a95b53de",
+    "source/benchmark/renv.lock": "9365c447bbc0fcd4747d69ecd9990671843509ffd4b14aa3f72eadcde4d8eb97",
+    "source/benchmark/renv/activate.R": "4892dac8acf8ecd017d6b11e3b5bbe62615ae9288a9b1ec90da73d6c54fe4d73",
+    "source/benchmark/src/attn_sum_save_modified.py": "f299a83382116bad5d478a60f3c9bc4e2d1589d4c8bb1faa0308a32f4de066b7",
+    "source/benchmark/src/collect_perturbation_predictions.R": "9f2c85799c497eb5569d068fd0b5c63d4ee98fd26d5409e697f63f2c78520d0e",
+    "source/benchmark/src/extract_gene_embedding_scfoundation.py": "0ba2997e9ec69b2701ad0777b39d812ee798a5f6e16b58e2845539096e52af29",
+    "source/benchmark/src/extract_gene_embedding_scgpt.py": "a246fd4c7ef74884fa5f551de3980cce92165fd865137c40f6bcc671a79fe1a1",
+    "source/benchmark/src/extract_pert_embedding_from_gears.R": "076abdf1057a6f88c762f3e245dd6ce51e65f46f6de7a2bd8b53c4e3c194869c",
+    "source/benchmark/src/extract_pert_embedding_pca.R": "21bcb3905da12fad7dcc56bf1423a2642135dfa5c6b2aa60ec9174ee2788d4ac",
+    "source/benchmark/src/finetune_modified.py": "c29b25459ded832c824eca239268e97d922b19d06a1e6d41fbd2ca05ef2213e8",
+    "source/benchmark/src/prepare_perturbation_data.py": "5fe1b9541ee2a711bc20dfebc63c354a1b98ced9784c992ed3c185a1a43b5c51",
+    "source/benchmark/src/run_additive_model.py": "413990d273f4f8fe1d0ef24308638feb62d48ef51367b5d1a3a2a3423ace6154",
+    "source/benchmark/src/run_cpa.py": "58524aaf8e3649fdaee4732d1ddf1ebc959e8266999d2aeb491eb831ec0fd707",
+    "source/benchmark/src/run_gears.py": "01601a17300205b0b1f268dfea95b022fa4a718a9b99ffce0402645a9fbe08a7",
+    "source/benchmark/src/run_geneformer.py": "0e9ccf2afb699ed0288e14e11cc6350b3e36a7b0a0b9273233472d943ddac9b4",
+    "source/benchmark/src/run_ground_truth_for_combinatorial_perturbations.py": "acfebab2a4004786c69dc212a6260ef22780e72f6fbb6696b94384b4276db8ac",
+    "source/benchmark/src/run_linear_pretrained_model.R": "49bda2a46b92c2b0b5bf263b957a3890dbdeff2d4837a94e6b0a397e0e38a6f8",
+    "source/benchmark/src/run_mean_prediction.R": "09c57717b163f0167aa4f23bc97b0e7322c43984defadd48036e1e681e555d09",
+    "source/benchmark/src/run_scbert.py": "89217d121749ec8ae13a4638ac4689574ec744c92938614485cd8db50fb24bb2",
+    "source/benchmark/src/run_scfoundation.py": "37bb0094ac960f96c09e84a6416028ad0925d99338ae2463c2ee32c00a5bfc82",
+    "source/benchmark/src/run_scgpt.py": "7c8940e541fad1f1ae38bd405126170b4dd7c47df8b53434ebf65381fcc16af7",
+    "source/benchmark/src/run_transfer_perturbation_prediction.R": "afbbd42c21325a41dac6444633f13f7fb28a80600ffb4023c81fa7e51aa6cf08",
+    "source/benchmark/src/run_uce.py": "6d169bc649e75e0d4caab7dba965ade18aead82b3c7c78d23ecd306144ab65e7",
+    "source/benchmark/submission/run_perturbation_benchmark.R": "668579dfe76226c8433aad4a44a1db44c4e103e0b891efa1b29a5b7e02c20623",
+    "source/benchmark/submission/wrap_scripts.R": "2a0a7e918fc1c3f8ac649258f8311ee891df407fcfd7bf8b12b28aba1c388fbd",
+    "source/copy_benchmark_project.sh": "69da68f9b2a4de8d0ba0f39baceb0cc222b4a92a110561d182d5e38799a75b79",
+    "source/notebooks/util.R": "76028ae36678ffe6cde327dcddf052a88ba826c956952a6bd1a2ad7fdd0148a5",
+    "source/render_notebooks.sh": "31c687684a987bbe7ebf4b2a6a6c64b9694619513888f0848b4b1f6fd40891ec",
+    "source/renv.lock": "39544b0f181ea508ed8e6167179c7b801fc357572656330b61f2c7ef17e8509b",
+    "source/renv/activate.R": "4892dac8acf8ecd017d6b11e3b5bbe62615ae9288a9b1ec90da73d6c54fe4d73",
+    "source/renv/settings.json": "965ebd30972d4dee75c91a2ba32242c64d5d0a4c6f1d386f6c73b3979ee4dc19"
+  },
+  "baseline_graph_hash": "859bdcfdafa47b020881d101ffabf9ed42c14efe4b994e004c3cc979952466bf",
+  "note_anchors": {
+    "question-map": {
+      "heading": "2. 论文实验地图",
+      "line_start": 84,
+      "line_end": 112,
+      "source": "assistant-generated"
+    },
+    "benchmark-double": {
+      "heading": "3. Benchmark 1：未见双扰动预测",
+      "line_start": 113,
+      "line_end": 383,
+      "source": "assistant-generated"
+    },
+    "benchmark-single": {
+      "heading": "4. Benchmark 2：未见单扰动预测",
+      "line_start": 384,
+      "line_end": 572,
+      "source": "assistant-generated"
+    },
+    "fig2a-comparison": {
+      "heading": "5. Fig.2a：完整模型和 baseline 的比较",
+      "line_start": 573,
+      "line_end": 645,
+      "source": "assistant-generated"
+    },
+    "representation": {
+      "heading": "6. Fig.2b/c：固定线性模型，替换 G 或 P",
+      "line_start": 646,
+      "line_end": 725,
+      "source": "assistant-generated"
+    },
+    "model-details": {
+      "heading": "7. 每个模型到底经过了什么",
+      "line_start": 726,
+      "line_end": 765,
+      "source": "assistant-generated"
+    },
+    "evidence-conclusions": {
+      "heading": "8. 论文完整论证链",
+      "line_start": 766,
+      "line_end": 792,
+      "source": "assistant-generated"
+    },
+    "f-prepare": {
+      "heading": "2. 论文实验地图",
+      "line_start": 84,
+      "line_end": 112,
+      "source": "assistant-generated"
+    },
+    "f-mean": {
+      "heading": "4.4 Baseline 1：Mean",
+      "line_start": 419,
+      "line_end": 436,
+      "source": "assistant-generated"
+    },
+    "f-additive": {
+      "heading": "3.6 Baseline 2：Additive",
+      "line_start": 204,
+      "line_end": 246,
+      "source": "assistant-generated"
+    },
+    "f-linear": {
+      "heading": "4.5 Baseline 2：Training linear model",
+      "line_start": 437,
+      "line_end": 553,
+      "source": "assistant-generated"
+    },
+    "f-transfer": {
+      "heading": "4.5.6 未见 perturbation X 怎么预测",
+      "line_start": 532,
+      "line_end": 553,
+      "source": "assistant-generated"
+    },
+    "f-scgpt": {
+      "heading": "3.4 哪些模型参与 Benchmark 1",
+      "line_start": 173,
+      "line_end": 190,
+      "source": "assistant-generated"
+    },
+    "f-scgpt-ft": {
+      "heading": "3.4 哪些模型参与 Benchmark 1",
+      "line_start": 173,
+      "line_end": 190,
+      "source": "assistant-generated"
+    },
+    "f-scgpt-attn": {
+      "heading": "3.4 哪些模型参与 Benchmark 1",
+      "line_start": 173,
+      "line_end": 190,
+      "source": "assistant-generated"
+    },
+    "f-scfoundation": {
+      "heading": "5.2 两个缺席模型",
+      "line_start": 585,
+      "line_end": 596,
+      "source": "assistant-generated"
+    },
+    "f-geneformer": {
+      "heading": "5.1 完整模型",
+      "line_start": 575,
+      "line_end": 584,
+      "source": "assistant-generated"
+    },
+    "f-scbert": {
+      "heading": "5.1 完整模型",
+      "line_start": 575,
+      "line_end": 584,
+      "source": "assistant-generated"
+    },
+    "f-uce": {
+      "heading": "5.1 完整模型",
+      "line_start": 575,
+      "line_end": 584,
+      "source": "assistant-generated"
+    },
+    "f-gears": {
+      "heading": "3.4 哪些模型参与 Benchmark 1",
+      "line_start": 173,
+      "line_end": 190,
+      "source": "assistant-generated"
+    },
+    "f-cpa": {
+      "heading": "5.2 两个缺席模型",
+      "line_start": 585,
+      "line_end": 596,
+      "source": "assistant-generated"
+    },
+    "f-ext-scgpt": {
+      "heading": "6.2 G 的来源",
+      "line_start": 666,
+      "line_end": 676,
+      "source": "assistant-generated"
+    },
+    "f-ext-scfoundation": {
+      "heading": "6.2 G 的来源",
+      "line_start": 666,
+      "line_end": 676,
+      "source": "assistant-generated"
+    },
+    "f-ext-gears": {
+      "heading": "6.3 P 的来源",
+      "line_start": 677,
+      "line_end": 690,
+      "source": "assistant-generated"
+    },
+    "f-ext-pca": {
+      "heading": "6.3 P 的来源",
+      "line_start": 677,
+      "line_end": 690,
+      "source": "assistant-generated"
+    },
+    "f-truth": {
+      "heading": "3.7 一条测试样本怎样走完整流程",
+      "line_start": 247,
+      "line_end": 277,
+      "source": "assistant-generated"
+    },
+    "f-collect": {
+      "heading": "5.5 Fig.2a 结果",
+      "line_start": 621,
+      "line_end": 629,
+      "source": "assistant-generated"
+    },
+    "f-util": {
+      "heading": "11. 研究结论",
+      "line_start": 856,
+      "line_end": 862,
+      "source": "assistant-generated"
+    },
+    "f-submit": {
+      "heading": "5.4 公平比较集合",
+      "line_start": 605,
+      "line_end": 620,
+      "source": "assistant-generated"
+    },
+    "f-wrap": {
+      "heading": "5.4 公平比较集合",
+      "line_start": 605,
+      "line_end": 620,
+      "source": "assistant-generated"
+    },
+    "faeeb7ad83b74604b3bb9969b063550e": {
+      "heading": "3.4 哪些模型参与 Benchmark 1",
+      "line_start": 173,
+      "line_end": 190,
+      "source": "assistant-generated"
+    },
+    "e7c95557a3de49509903d15e0c05542a": {
+      "heading": "3.4 哪些模型参与 Benchmark 1",
+      "line_start": 173,
+      "line_end": 190,
+      "source": "assistant-generated"
+    },
+    "1cfaaff74e324bbcb3225f353c524023": {
+      "heading": "3.4 哪些模型参与 Benchmark 1",
+      "line_start": 173,
+      "line_end": 190,
+      "source": "assistant-generated"
+    },
+    "d23d6c6511aa465c8d8b9659a7d4ce6b": {
+      "heading": "3.4 哪些模型参与 Benchmark 1",
+      "line_start": 173,
+      "line_end": 190,
+      "source": "assistant-generated"
+    },
+    "9cb4d7d4c48c44d9bb72cccd0cec2af9": {
+      "heading": "3.4 哪些模型参与 Benchmark 1",
+      "line_start": 173,
+      "line_end": 190,
+      "source": "assistant-generated"
+    },
+    "b9b86f8f61c0408c88fd3e8557a3f617": {
+      "heading": "3.4 哪些模型参与 Benchmark 1",
+      "line_start": 173,
+      "line_end": 190,
+      "source": "assistant-generated"
+    },
+    "3824283ba5874555887e5cbc98848624": {
+      "heading": "3.4 哪些模型参与 Benchmark 1",
+      "line_start": 173,
+      "line_end": 190,
+      "source": "assistant-generated"
+    },
+    "0af064bde4f24f028d706b65e7d1f935": {
+      "heading": "2. 论文实验地图",
+      "line_start": 84,
+      "line_end": 112,
+      "source": "assistant-generated"
+    },
+    "25318feaed0544b69136b4088b0bdbed": {
+      "heading": "3.6 Baseline 2：Additive",
+      "line_start": 204,
+      "line_end": 246,
+      "source": "assistant-generated"
+    },
+    "c58fa1f27f1b48e1b689ea2b2742d23a": {
+      "heading": "3.6 Baseline 2：Additive",
+      "line_start": 204,
+      "line_end": 246,
+      "source": "assistant-generated"
+    },
+    "a9296f19bf8942008a37c87130b9838c": {
+      "heading": "5.2 两个缺席模型",
+      "line_start": 585,
+      "line_end": 596,
+      "source": "assistant-generated"
+    },
+    "c0d7df8c4fb0419e8a12be6848024ff8": {
+      "heading": "5.1 完整模型",
+      "line_start": 575,
+      "line_end": 584,
+      "source": "assistant-generated"
+    },
+    "d8e8297349e34c648b8fc029676783ea": {
+      "heading": "5.1 完整模型",
+      "line_start": 575,
+      "line_end": 584,
+      "source": "assistant-generated"
+    },
+    "5a436f208eb34d4482feef1917ff9639": {
+      "heading": "5.1 完整模型",
+      "line_start": 575,
+      "line_end": 584,
+      "source": "assistant-generated"
+    },
+    "c05513c78cbb44f2b6456b4d5fc68884": {
+      "heading": "5.1 完整模型",
+      "line_start": 575,
+      "line_end": 584,
+      "source": "assistant-generated"
+    },
+    "f1b80e68531347758afa8ba45ae9ed03": {
+      "heading": "3.7 一条测试样本怎样走完整流程",
+      "line_start": 247,
+      "line_end": 277,
+      "source": "assistant-generated"
+    },
+    "84e8e090f39b43b49fafaea97434380e": {
+      "heading": "3.7 一条测试样本怎样走完整流程",
+      "line_start": 247,
+      "line_end": 277,
+      "source": "assistant-generated"
+    },
+    "0dc8193815bd4b9cbf9c4b39a9136734": {
+      "heading": "5.1 完整模型",
+      "line_start": 575,
+      "line_end": 584,
+      "source": "assistant-generated"
+    },
+    "5f14d2d670f4472dafaf1f52703378f6": {
+      "heading": "5.1 完整模型",
+      "line_start": 575,
+      "line_end": 584,
+      "source": "assistant-generated"
+    },
+    "13db8036d31747a8afa56ace1f7efa2b": {
+      "heading": "3.4 哪些模型参与 Benchmark 1",
+      "line_start": 173,
+      "line_end": 190,
+      "source": "assistant-generated"
+    },
+    "b7e0c2c028ee4568a30613ef6ae4f999": {
+      "heading": "3.4 哪些模型参与 Benchmark 1",
+      "line_start": 173,
+      "line_end": 190,
+      "source": "assistant-generated"
+    },
+    "6ba4d02c4b6647c19241d219b9461508": {
+      "heading": "3.4 哪些模型参与 Benchmark 1",
+      "line_start": 173,
+      "line_end": 190,
+      "source": "assistant-generated"
+    },
+    "32810d99239140a9b77fd57161038407": {
+      "heading": "5.1 完整模型",
+      "line_start": 575,
+      "line_end": 584,
+      "source": "assistant-generated"
+    }
+  }
+}
