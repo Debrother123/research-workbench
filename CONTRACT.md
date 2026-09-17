@@ -15,7 +15,7 @@ Check report `{source_mapping:{status,details:[]},interfaces:{status,details:[]}
 ## API (JSON success; failures non-2xx `{error}`)
 
 - GET `/api/projects` -> `{projects:[{id,name,mode,revision,updated_at}]}`
-- POST `/api/projects` `{name,source_path,note_path}` -> full project, static AST candidate decomposition only. Paths must exist. Never execute imports.
+- POST `/api/projects` `{name,source_path,note_path?}` -> full project, static AST candidate decomposition only. `note_path` is optional; when omitted, no note text or anchors are created. An existing source path must be a specific repository. Never execute imports.
 - GET `/api/projects/<id>` -> full project (refresh sync detection)
 - PUT `/api/projects/<id>` `{revision, name?,brief?,nodes?,edges?,visual_layout?,note_anchors?}` -> full project, optimistic concurrency 409 on stale; graph semantic changes in paper mode rejected, positions allowed; research arbitrary edits permitted after validation. `visual_layout` may carry `collapsed` (expanded-state memory) and `sizes` (user-resized group dimensions), both presentation-only.
 - POST `/api/projects/<id>/fork` `{name?}` -> new research project, preserves immutable original and copies current working.

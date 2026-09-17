@@ -125,18 +125,24 @@ class Store:
 
     def import_project(self, name, source_path, note_path):
         with self.lock:
-            source_input, note_input = Path(source_path).expanduser(), Path(note_path).expanduser()
-            source, note = source_input.resolve(), note_input.resolve()
+            source_input = Path(source_path).expanduser()
+            note_raw = str(note_path or '').strip()
+            note_input = Path(note_raw).expanduser() if note_raw else None
+            source = source_input.resolve()
+            note = note_input.resolve() if note_input else None
             forbidden = {Path('/'), Path.home(), Path.home() / 'Documents', Path(__file__).resolve().parent}
             approved_import = self.root / 'imports' in source.parents
             if source_input.is_symlink() or not source.is_dir() or source in forbidden or self.root == source or (self.root in source.parents and not approved_import) or source in self.root.parents:
                 raise Error('Choose a specific source repository outside the workbench workspace')
-            if note_input.is_symlink() or not note.is_file() or note.suffix.lower() not in ('.md', '.txt') or note.stat().st_size > 2 * 1024 * 1024 or not permitted(note):
-                raise Error('Note must be a regular UTF-8 Markdown/text file under 2 MiB')
-            try:
-                note_text = note.read_text(encoding='utf-8')
-            except UnicodeError:
-                raise Error('Note is not UTF-8')
+            if note_input is not None:
+                if note_input.is_symlink() or not note.is_file() or note.suffix.lower() not in ('.md', '.txt') or note.stat().st_size > 2 * 1024 * 1024 or not permitted(note):
+                    raise Error('Note must be a regular UTF-8 Markdown/text file under 2 MiB')
+                try:
+                    note_text = note.read_text(encoding='utf-8')
+                except UnicodeError:
+                    raise Error('Note is not UTF-8')
+            else:
+                note_text = ''
             files, excluded = self._inventory(source)
             if not files:
                 raise Error('No supported text source files found')
@@ -148,7 +154,7 @@ class Store:
                     target = directory / version / rel
                     target.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copyfile(str(source / rel), str(target))
-            p = {'id': project_id, 'name': str(name or source.name)[:200], 'mode': 'paper', 'revision': 1, 'created_at': now(), 'updated_at': now(), 'note_path': str(note), 'note_text': note_text, 'source_path': str(source), 'brief': '', 'nodes': [], 'edges': [], 'checks': {}, 'files': files, 'exports': [], 'tasks': [], 'warnings': ['AST candidate decomposition only: containment is not tensor dataflow.'] + excluded}
+            p = {'id': project_id, 'name': str(name or source.name)[:200], 'mode': 'paper', 'revision': 1, 'created_at': now(), 'updated_at': now(), 'note_path': str(note) if note else '', 'note_text': note_text, 'source_path': str(source), 'brief': '', 'nodes': [], 'edges': [], 'checks': {}, 'files': files, 'exports': [], 'tasks': [], 'warnings': ['AST candidate decomposition only: containment is not tensor dataflow.'] + excluded}
             p['source_hashes'] = self._hashes(directory / 'working', files)
             p['original_hashes'] = dict(p['source_hashes'])
             for rel in files:

@@ -37,6 +37,12 @@ class WorkbenchTests(unittest.TestCase):
             c = node['code']
             self.assertEqual(c['sha256'], self.original[c['file']])
 
+    def test_import_without_note_is_code_only(self):
+        p = self.store.import_project('code-only', str(self.source), '')
+        self.assertEqual(p['note_path'], '')
+        self.assertEqual(p['note_text'], '')
+        self.assertTrue(p['nodes'])
+        self.assertEqual(p['checks']['execution']['status'], 'pending')
     def test_paper_layout_vs_semantic_and_conflict(self):
         p = copy.deepcopy(self.paper)
         p['nodes'][0]['x'] += 10

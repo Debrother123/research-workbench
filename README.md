@@ -14,12 +14,6 @@ python server.py --workspace demo-workspace --open
 
 打开 `http://127.0.0.1:8765`，进入 `PerturbationBaselines2` 即可查看完整示例。仓库自带的 `static/` 是预构建前端，普通使用不需要 Node.js。
 
-也可以直接运行：
-
-```bash
-python server.py --workspace demo-workspace
-```
-
 ## 重要：完整工作流需要配套 skill
 
 导入代码和精读笔记后，工作台首先只能生成 **AST 候选图**，不会自动判断论文逻辑、不会自动把节点映射到笔记小节，也不会自动完成代码适配和证据核验。
@@ -44,17 +38,31 @@ python install_skill.py
 如果目标已存在，安装脚本会拒绝覆盖，先人工检查后再处理。使用其他 AI 时，可以直接让它读取仓库中的 `skills/research-module-sync/SKILL.md` 和 `references/workflow.md`。
 
 没有 skill 时，你仍可以浏览演示图、查看导入候选和阅读笔记；但不能把静态候选图当作已经完成论文逻辑拆解或代码核验。
+
+## 笔记是否必需
+
+不是必须上传到 GitHub，也不要求把私人笔记放进公开仓库。
+
+- 浏览自带 demo：不需要额外笔记。
+- 导入自己的代码：`note_path` 现在是可选的，不填也能建立“仅代码候选图”。
+- 使用完整笔记驱动流程：需要一份本地笔记，并配合 `research-module-sync` skill。
+- 私人笔记只在本机读取；工作台会把 `note_text` 缓存在本机的 `project.json` 中，所以不要把不希望披露的项目 workspace 公开分享。
+
+代码-only 导入适合先看模型结构、函数分层和源码位置；笔记锚定、论文/代码冲突说明和完整语义核验仍需要笔记。
+
 ## 一键启动
 
 - Windows：双击 `start.bat`，或在 PowerShell 中运行 `.\start.ps1`
 - macOS / Linux：运行 `./start.sh`
 - 让 AI 自动安装：把 `INSTALL_WITH_AI.md` 中的提示词复制给 AI
 - Docker：运行 `docker compose up --build`
+
 ## 特性
 
 - 笔记驱动的分层模块图：从论文实验地图展开到脚本和代码锚点。
 - 保留作者原始代码，研究工作副本独立存在。
 - React Flow + 本地 ELK 布局，支持分组折叠、搜索定位、节点与笔记双向高亮。
+- 代码-only 和笔记驱动两种起步方式。
 - 图上只展示可追溯的代码位置；推断关系明确标记为“推断”。
 - 本地文件优先，不依赖模型 API、云数据库或运行时 CDN。
 
@@ -76,7 +84,7 @@ python install_skill.py
 server.py / backend.py / assistant.py   本地后端与检查工具
 static/                                 预构建浏览器应用
 frontend/                               React Flow 前端源码与构建脚本
-skills/research-module-sync/            外部助手同步工作流
+skills/research-module-sync/            完整工作流必需的助手 skill
 demo-workspace/                         演示项目、笔记与 MIT 上游代码
 tests/                                  Python 标准库测试
 docs/evidence/                         示例结构整理报告与审计图
@@ -105,6 +113,7 @@ python assistant.py verify demo-workspace/projects/b32e5244-c083-4ade-9b11-dc386
 ## 设计边界
 
 - 静态结构不等于已核验计算流。
+- 未提供笔记时不会自动生成笔记锚点或论文/代码对应说明。
 - 未适配的研究图导出后会标记 `needs_adaptation`。
 - 本项目不声称自动复现论文训练结果，也不把作者源码替代成未经验证的实现。
 - 导入代码默认不执行；需要运行时必须由用户显式发起独立适配任务。
