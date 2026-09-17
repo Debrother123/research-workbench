@@ -30,6 +30,7 @@ Check `http://127.0.0.1:8765/api/health` before reporting success.
 - Never execute imported paper/repository code automatically.
 - Never modify `original/`; use `working/` or a research fork for changes.
 - Do not upload local code, notes, credentials, or workspace data.
-- Keep generated user workspaces separate from `demo-workspace`.
+- Treat `demo-workspace` as a tracked showcase; never import personal projects there.
+- Store personal projects in `workspace/` (gitignored) or an external directory.
 - Do not claim paper reproduction from static parsing.
 - Preserve MIT and third-party license notices.

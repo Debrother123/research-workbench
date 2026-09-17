@@ -50,6 +50,31 @@ python install_skill.py
 
 代码-only 导入适合先看模型结构、函数分层和源码位置；笔记锚定、论文/代码冲突说明和完整语义核验仍需要笔记。
 
+## 数据保存在哪里
+
+- `demo-workspace/`：随 Git 仓库发布的演示数据，应保持干净。不要在这里导入个人论文。
+- `workspace/`：个人项目的默认位置，已写入 `.gitignore`，不会被普通 `git add` 提交。
+- 仓库外目录：也可以给个人项目指定独立路径，例如：
+
+```bash
+python server.py --workspace "D:\ResearchWorkbench\workspace" --open
+```
+
+个人项目通常保存在：
+
+```text
+workspace/projects/<项目 UUID>/
+  project.json          图结构、笔记缓存、哈希与元数据
+  original/             导入时的原始快照，禁止修改
+  working/              研究工作副本
+  versions/             版本快照
+  assistant-checkpoints/可恢复检查点
+  assistant-reports/    AI 审阅与证据报告
+  exports/              导出的独立工程
+  tasks/                外部 AI 任务队列
+```
+
+注意：提供笔记时，笔记正文会缓存在本机的 `project.json`。如果笔记是私密的，请保持 `workspace/` 不被提交，或者使用仓库外的 workspace 路径。
 ## 一键启动
 
 - Windows：双击 `start.bat`，或在 PowerShell 中运行 `.\start.ps1`

@@ -21,7 +21,7 @@ https://github.com/Debrother123/research-workbench
 7. 启动 `python server.py --workspace demo-workspace --port 8765 --open`，检查 http://127.0.0.1:8765/api/health 返回 200。
 8. 在浏览器打开 http://127.0.0.1:8765，确认能看到 PerturbationBaselines2 演示项目。
 9. 不要执行 demo 中的论文作者代码，不要上传代码或笔记，不要连接训练服务器。
-10. 如果我需要整理自己的论文，请新建独立 workspace，例如 `python server.py --workspace my-workspace --open`。我可以先只导入代码；如果提供本地笔记，再按 skill 的 checkpoint → apply-graph → attest → verify 流程补上笔记锚定和语义核验，不要只停在 AST 候选阶段。
+10. 如果我需要整理自己的论文，请使用默认个人 workspace：`python server.py --workspace workspace --open`。`workspace/` 已在 `.gitignore` 中，个人项目不要写入 `demo-workspace`；也可以改成仓库外的绝对路径。我可以先只导入代码；如果提供本地笔记，再按 skill 的 checkpoint → apply-graph → attest → verify 流程补上笔记锚定和语义核验，不要只停在 AST 候选阶段。
 11. 最后报告：skill 安装路径、测试结果、verify 结果、服务地址、演示项目是否可见，以及阻塞项。
 ```
 
