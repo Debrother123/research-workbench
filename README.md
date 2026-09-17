@@ -20,6 +20,12 @@ python server.py --workspace demo-workspace --open
 python server.py --workspace demo-workspace
 ```
 
+## 一键启动
+
+- Windows：双击 `start.bat`，或在 PowerShell 中运行 `.\start.ps1`
+- macOS / Linux：运行 `./start.sh`
+- 让 AI 自动安装：把 `INSTALL_WITH_AI.md` 中的提示词复制给 AI
+- Docker：运行 `docker compose up --build`
 ## 特性
 
 - 笔记驱动的分层模块图：从论文实验地图展开到脚本和代码锚点。
