@@ -3,12 +3,14 @@ $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $Root
 
 if (Get-Command python -ErrorAction SilentlyContinue) {
-    python server.py --workspace demo-workspace --port 8765 --open
+    python bootstrap_workspace.py
+    python server.py --workspace workspace --port 8765 --open
     exit $LASTEXITCODE
 }
 
 if (Get-Command py -ErrorAction SilentlyContinue) {
-    py -3 server.py --workspace demo-workspace --port 8765 --open
+    py -3 bootstrap_workspace.py
+    py -3 server.py --workspace workspace --port 8765 --open
     exit $LASTEXITCODE
 }
 

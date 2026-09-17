@@ -12,7 +12,7 @@
 python server.py --workspace demo-workspace --open
 ```
 
-打开 `http://127.0.0.1:8765`，进入 `PerturbationBaselines2` 即可查看完整示例。仓库自带的 `static/` 是预构建前端，普通使用不需要 Node.js。
+打开 `http://127.0.0.1:8765`，进入 `PerturbationBaselines2` 即可查看完整示例。`demo-workspace` 默认只读。仓库自带的 `static/` 是预构建前端，普通使用不需要 Node.js。
 
 ## 重要：完整工作流需要配套 skill
 
@@ -52,8 +52,8 @@ python install_skill.py
 
 ## 数据保存在哪里
 
-- `demo-workspace/`：随 Git 仓库发布的演示数据，应保持干净。不要在这里导入个人论文。
-- `workspace/`：个人项目的默认位置，已写入 `.gitignore`，不会被普通 `git add` 提交。
+- `demo-workspace/`：随 Git 仓库发布的演示数据，默认只读。不要在这里导入个人论文。
+- `workspace/`：个人项目的默认位置，已写入 `.gitignore`，不会被普通 `git add` 提交。一键启动脚本会先把 demo 复制到这里，再允许保存和导入。
 - 仓库外目录：也可以给个人项目指定独立路径，例如：
 
 ```bash
@@ -74,7 +74,7 @@ workspace/projects/<项目 UUID>/
   tasks/                外部 AI 任务队列
 ```
 
-注意：提供笔记时，笔记正文会缓存在本机的 `project.json`。如果笔记是私密的，请保持 `workspace/` 不被提交，或者使用仓库外的 workspace 路径。
+注意：提供笔记时，笔记正文会缓存在本机的 `project.json`。如果笔记是私密的，请保持 `workspace/` 不被提交，或者使用仓库外的 workspace 路径。只有开发 demo 本身时，才应显式使用 `--allow-demo-edit`。
 ## 一键启动
 
 - Windows：双击 `start.bat`，或在 PowerShell 中运行 `.\start.ps1`

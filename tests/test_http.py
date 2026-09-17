@@ -49,6 +49,27 @@ class HttpTests(unittest.TestCase):
         self.assertIn(b'app.js',self.call('/')[1])
         self.assertEqual(self.call('/../backend.py')[0],404)
 
+    def test_read_only_mode_rejects_project_mutations(self):
+        temp = tempfile.TemporaryDirectory()
+        read_only = make_server(Store(Path(temp.name) / 'workspace'), 0, allow_mutations=False)
+        thread = threading.Thread(target=read_only.serve_forever, daemon=True)
+        thread.start()
+        url = 'http://127.0.0.1:' + str(read_only.server_port)
+        try:
+            with request.urlopen(url + '/api/session', timeout=5) as r:
+                token = json.loads(r.read())['token']
+            req = request.Request(
+                url + '/api/projects', method='POST', data=b'{}',
+                headers={'Content-Type': 'application/json', 'X-Workbench-Token': token},
+            )
+            with self.assertRaises(error.HTTPError) as caught:
+                request.urlopen(req, timeout=5)
+            self.assertEqual(caught.exception.code, 403)
+        finally:
+            read_only.shutdown()
+            read_only.server_close()
+            thread.join()
+            temp.cleanup()
     def test_http_import_save_export(self):
         source = self.base / 'source'
         shutil.copytree(ROOT / 'examples/toy-association',source)

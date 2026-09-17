@@ -18,8 +18,8 @@ https://github.com/Debrother123/research-workbench
    - `skills/research-module-sync/references/workflow.md`
 5. 运行 `python -m unittest discover -s tests -v`；Windows 若因符号链接权限跳过一项测试，要明确报告，不要伪造通过。
 6. 运行 `python assistant.py verify demo-workspace/projects/b32e5244-c083-4ade-9b11-dc386ab17901`，确认输出 valid。
-7. 启动 `python server.py --workspace demo-workspace --port 8765 --open`，检查 http://127.0.0.1:8765/api/health 返回 200。
-8. 在浏览器打开 http://127.0.0.1:8765，确认能看到 PerturbationBaselines2 演示项目。
+7. 先运行 `python bootstrap_workspace.py` 创建个人可写 workspace，再启动 `python server.py --workspace workspace --port 8765 --open`，检查 http://127.0.0.1:8765/api/health 返回 200。
+8. 在浏览器打开 http://127.0.0.1:8765，确认能在个人 workspace 副本中看到 PerturbationBaselines2。
 9. 不要执行 demo 中的论文作者代码，不要上传代码或笔记，不要连接训练服务器。
 10. 如果我需要整理自己的论文，请使用默认个人 workspace：`python server.py --workspace workspace --open`。`workspace/` 已在 `.gitignore` 中，个人项目不要写入 `demo-workspace`；也可以改成仓库外的绝对路径。我可以先只导入代码；如果提供本地笔记，再按 skill 的 checkpoint → apply-graph → attest → verify 流程补上笔记锚定和语义核验，不要只停在 AST 候选阶段。
 11. 最后报告：skill 安装路径、测试结果、verify 结果、服务地址、演示项目是否可见，以及阻塞项。

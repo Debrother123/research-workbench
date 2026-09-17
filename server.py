@@ -11,7 +11,7 @@ from urllib.parse import parse_qs, urlsplit
 from backend import Store, Error
 
 
-def make_server(store, port=8765):
+def make_server(store, port=8765, allow_mutations=True):
     token = secrets.token_urlsafe(32)
     static = Path(__file__).resolve().parent / 'static'
 
@@ -42,6 +42,8 @@ def make_server(store, port=8765):
                 raise Error('Cross-site request rejected', 403)
             parsed = urlsplit(self.path)
             path = parsed.path
+            if not allow_mutations and path.startswith('/api/projects') and self.command in ('POST', 'PUT'):
+                raise Error('This workspace is read-only. Start with --workspace workspace, or use --allow-demo-edit intentionally.', 403)
             if self.command == 'GET' and path in ('/', '/index.html', '/app.js', '/style.css', '/workflow.js', '/workflow.css', '/notes.js', '/favicon.svg', '/vendor/elk.bundled.js', '/bundle/canvas.js', '/bundle/canvas.css'):
                 filename = 'index.html' if path == '/' else path[1:]
                 f = static / filename
@@ -139,9 +141,14 @@ def main():
     parser.add_argument('--port', type=int, default=8765)
     parser.add_argument('--workspace', default=str(Path(__file__).resolve().parent / 'workspace'))
     parser.add_argument('--open', action='store_true', help='Open the local workbench in your browser')
+    parser.add_argument('--allow-demo-edit', action='store_true', help='Allow writes to demo-workspace (development only)')
     args = parser.parse_args()
     try:
-        server = make_server(Store(args.workspace), args.port)
+        workspace_path = Path(args.workspace).expanduser().resolve()
+        allow_mutations = not (workspace_path.name == 'demo-workspace' and not args.allow_demo_edit)
+        server = make_server(Store(str(workspace_path)), args.port, allow_mutations=allow_mutations)
+        if not allow_mutations:
+            print('Read-only demo workspace. Use --workspace workspace for personal projects.', flush=True)
     except OSError:
         if args.open:
             try:
