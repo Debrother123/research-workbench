@@ -1,5 +1,13 @@
 # Agent instructions
 
+## Required companion skill
+
+The app is not fully automatic. Static import only produces AST candidates. For note-grounded decomposition, graph updates, code adaptation, and evidence verification, read and follow:
+
+- `skills/research-module-sync/SKILL.md`
+- `skills/research-module-sync/references/workflow.md`
+
+Install it for Codex with `python install_skill.py` when a full workflow is requested. Do not claim that import alone completed the paper/module mapping.
 ## Start here
 
 - Read `README.md` and `INSTALL_WITH_AI.md` before setup.

@@ -20,6 +20,30 @@ python server.py --workspace demo-workspace --open
 python server.py --workspace demo-workspace
 ```
 
+## 重要：完整工作流需要配套 skill
+
+导入代码和精读笔记后，工作台首先只能生成 **AST 候选图**，不会自动判断论文逻辑、不会自动把节点映射到笔记小节，也不会自动完成代码适配和证据核验。
+
+完整的“笔记驱动模块图 + 代码同步 + checkpoint/attest/verify”流程依赖仓库内的配套 skill：
+
+- `skills/research-module-sync/SKILL.md`
+- `skills/research-module-sync/references/workflow.md`
+
+安装到本机 Codex：
+
+```bash
+python install_skill.py
+```
+
+安装位置通常是：
+
+```text
+~/.codex/skills/research-module-sync
+```
+
+如果目标已存在，安装脚本会拒绝覆盖，先人工检查后再处理。使用其他 AI 时，可以直接让它读取仓库中的 `skills/research-module-sync/SKILL.md` 和 `references/workflow.md`。
+
+没有 skill 时，你仍可以浏览演示图、查看导入候选和阅读笔记；但不能把静态候选图当作已经完成论文逻辑拆解或代码核验。
 ## 一键启动
 
 - Windows：双击 `start.bat`，或在 PowerShell 中运行 `.\start.ps1`
